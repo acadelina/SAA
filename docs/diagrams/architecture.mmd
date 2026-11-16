@@ -1,0 +1,30 @@
+flowchart TB
+    SIM["<b>Simulator</b><br/>outside the system"]
+
+    subgraph SYS["Shifting Hulls system"]
+        RS[("<b>Redis Streams</b><br/>message queue")]
+        ING["<b>Ingestion</b><br/>check and clean"]
+        PG[("<b>PostgreSQL</b><br/>data + hull features")]
+
+        subgraph AI["AI decision · once a day"]
+            SCO["<b>Risk scorer</b><br/>LightGBM"]
+            AGT["<b>Decision agent</b><br/>local LLM"]
+            RES["<b>Resolver</b><br/>same LLM, own prompt"]
+        end
+
+        VAL["<b>Plan validator</b><br/>budget K, fallback"]
+        UI["<b>Dashboard</b>"]
+    end
+
+    USER(["Inspector"])
+
+    SIM -->|"AIS, events, results"| RS
+    RS --> ING
+    ING --> PG
+    PG -->|"features, history"| AGT
+    AGT --> SCO
+    AGT --> RES
+    AGT -->|"proposed plan"| VAL
+    VAL -->|"inspection plan"| SIM
+    VAL --> UI
+    UI --> USER

@@ -1,0 +1,19 @@
+flowchart LR
+    subgraph OFF["Offline · training"]
+        direction TB
+        REPLAY["Replay stored days<br/>from PostgreSQL"]
+        TRAIN["Train risk scorer<br/>tune LLM prompts"]
+        STORE[("Model store<br/>versioned files")]
+        REPLAY --> TRAIN --> STORE
+    end
+
+    subgraph ON["Online · every simulated day"]
+        direction TB
+        LOAD["Load current scorer<br/>and the local LLM"]
+        RUN["Answer tool calls<br/>and build the plan"]
+        LOG["Log inputs, outputs<br/>and latency"]
+        LOAD --> RUN --> LOG
+    end
+
+    STORE --> LOAD
+    LOG -.->|"new data"| REPLAY

@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant P as Prefect
+    participant A as Decision agent
+    participant T as Tools<br/>(scorer, resolver, data)
+    participant V as Plan validator
+    participant S as Simulator
+
+    P->>A: start day d (budget K)
+    A->>T: get shortlist
+    T-->>A: ranked hulls with scores
+    loop for each unclear hull
+        A->>T: check identity and history
+        T-->>A: same hull? + history
+    end
+    A->>V: submit plan (K hulls + reasons)
+    V-->>P: final plan (or scorer top-K as fallback)
+    P->>S: send plan
+    S-->>T: inspection results (used the next day)
