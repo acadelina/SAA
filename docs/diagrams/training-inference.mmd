@@ -1,10 +1,11 @@
 flowchart LR
-    subgraph OFF["Offline · training"]
+    subgraph OFF["Offline · training (outside the daily loop)"]
         direction TB
         REPLAY["Replay stored days<br/>from PostgreSQL"]
+        SPLIT["Split by time and seed"]
         TRAIN["Train risk scorer<br/>tune LLM prompts"]
-        STORE[("Model store<br/>versioned files")]
-        REPLAY --> TRAIN --> STORE
+        STORE[("Model store<br/>versioned files + metadata")]
+        REPLAY --> SPLIT --> TRAIN --> STORE
     end
 
     subgraph ON["Online · every simulated day"]
@@ -16,4 +17,4 @@ flowchart LR
     end
 
     STORE --> LOAD
-    LOG -.->|"new data"| REPLAY
+    LOG -.->|"inspection results<br/>(drift re-scoring)"| REPLAY

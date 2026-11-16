@@ -1,18 +1,25 @@
 sequenceDiagram
+    participant S as Simulator
+    participant I as Redis + ingestion<br/>+ feature service
     participant P as Prefect
     participant A as Decision agent
-    participant T as Tools<br/>(scorer, resolver, data)
+    participant T as MCP tools<br/>(scorer, resolver, data)
     participant V as Plan validator
-    participant S as Simulator
 
+    S-)I: AIS messages and compliance events (all day, continuously)
     P->>A: start day d (budget K)
-    A->>T: get shortlist
-    T-->>A: ranked hulls with scores
+    A->>T: get_shortlist()
+    T-->>A: ranked hulls with risk scores
     loop for each unclear hull
-        A->>T: check identity and history
-        T-->>A: same hull? + history
+        A->>T: resolve_identity / get_timeline / get_events
+        T-->>A: same hull? (confidence) + history
     end
-    A->>V: submit plan (K hulls + reasons)
-    V-->>P: final plan (or scorer top-K as fallback)
-    P->>S: send plan
-    S-->>T: inspection results (used the next day)
+    A->>T: submit_inspection_plan(K hulls + reasons)
+    T->>V: proposed plan
+    alt plan valid and on time
+        V-->>P: agent plan
+    else invalid, over budget, timeout or LLM down
+        V-->>P: scorer top-K (fallback)
+    end
+    P->>S: send final plan
+    S-)I: inspection results (used from day d+1)

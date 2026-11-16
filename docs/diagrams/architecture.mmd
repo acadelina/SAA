@@ -1,30 +1,59 @@
 flowchart TB
-    SIM["<b>Simulator</b><br/>outside the system"]
+    SIM["<b>Simulator</b> · outside the system<br/>fleet, registries, inspection outcomes"]
 
-    subgraph SYS["Shifting Hulls system"]
-        RS[("<b>Redis Streams</b><br/>message queue")]
-        ING["<b>Ingestion</b><br/>check and clean"]
-        PG[("<b>PostgreSQL</b><br/>data + hull features")]
+    subgraph SYS["Shifting Hulls system · Docker Compose, one machine"]
+        direction TB
 
-        subgraph AI["AI decision · once a day"]
-            SCO["<b>Risk scorer</b><br/>LightGBM"]
-            AGT["<b>Decision agent</b><br/>local LLM"]
-            RES["<b>Resolver</b><br/>same LLM, own prompt"]
+        subgraph IN["1 · Ingestion (continuous)"]
+            direction LR
+            RS[("<b>Redis Streams</b><br/>ais · compliance · results")]
+            ING["<b>Ingestion consumer</b><br/>Pydantic schema check"]
+            FEAT["<b>Feature service</b><br/>per-hull identity timelines"]
+            RS --> ING
         end
 
-        VAL["<b>Plan validator</b><br/>budget K, fallback"]
-        UI["<b>Dashboard</b>"]
+        subgraph DB["2 · Storage (PostgreSQL)"]
+            direction LR
+            QUA[("quarantine")]
+            RAW[("raw + clean rows")]
+            HF[("hull features")]
+            LOG[("plans, tool-call logs,<br/>metrics, model registry")]
+        end
+
+        subgraph AI["3 · AI decision (once per simulated day)"]
+            direction LR
+            PRE["<b>Prefect</b><br/>daily flow"]
+            AGT["<b>Decision agent</b><br/>LLM, agent prompt"]
+            MCP["<b>MCP tool server</b><br/>read-only tools +<br/>submit_inspection_plan"]
+            SCO["<b>Risk scorer</b><br/>LightGBM"]
+            RES["<b>Resolver</b><br/>LLM, resolver prompt"]
+            VLLM["<b>vLLM</b><br/>one local 4-bit model"]
+            MS[("<b>Model store</b><br/>versioned scorer")]
+            VAL["<b>Plan validator</b><br/>budget K, schema, timeout"]
+
+            PRE -->|"start day d, K"| AGT
+            AGT <-->|"tool calls"| MCP
+            MCP --> SCO
+            MCP --> RES
+            MS --> SCO
+            AGT -.-> VLLM
+            RES -.-> VLLM
+            MCP -->|"proposed plan"| VAL
+            SCO -->|"top-K fallback"| VAL
+        end
+
+        API["<b>FastAPI</b> · REST API + dashboard"]
     end
 
-    USER(["Inspector"])
+    USER(["Inspector / analyst"])
 
-    SIM -->|"AIS, events, results"| RS
-    RS --> ING
-    ING --> PG
-    PG -->|"features, history"| AGT
-    AGT --> SCO
-    AGT --> RES
-    AGT -->|"proposed plan"| VAL
-    VAL -->|"inspection plan"| SIM
-    VAL --> UI
-    UI --> USER
+    SIM -->|"AIS, compliance events,<br/>inspection results"| RS
+    ING -->|"invalid"| QUA
+    ING -->|"valid"| RAW
+    RAW --> FEAT
+    FEAT --> HF
+    HF -->|"features, timelines"| MCP
+    VAL -->|"final plan"| LOG
+    VAL ==>|"inspection plan (via Prefect)"| SIM
+    LOG --> API
+    API --> USER

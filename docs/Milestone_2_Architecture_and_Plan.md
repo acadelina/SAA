@@ -82,6 +82,16 @@ A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 
 
 **Stream C: inspection results** (feedback loop). After each day the simulator reports what each inspection found (shadow or not). Inspected shadow hulls may adapt, for example by changing identity less often and switching off AIS more often. This is how drift is created.
 
+| Field | Example | Notes |
+|---|---|---|
+| `day`, `plan_id` | 12, `p-0012` | Which daily plan the inspection belongs to |
+| `imo`, `mmsi` | 9319703, 273456780 | Identity of the inspected hull at inspection time |
+| `outcome` | `shadow` / `clean` | The only ground truth the system ever sees during operation |
+| `reported_at` | end of day *d* | Available to the system from day *d*+1 |
+
+- **Frequency:** K messages per simulated day (one per inspected hull).
+- **Labels and fairness of evaluation:** the system only learns labels for hulls it chose to inspect. The full ground truth (which hulls are shadow) stays inside the simulator and is used only by the evaluation scripts, never by the running system.
+
 ### 2.3 How new data enters the system
 
 1. The simulator publishes messages to **Redis Streams** (one stream each for AIS, compliance and inspection results).
@@ -97,16 +107,16 @@ Because every message is stored raw, any simulated day can be **replayed** later
 
 ### 3.1 Components and data flow
 
-<p align="center"><img src="diagrams/architecture.png" alt="System architecture" width="520"></p>
+<p align="center"><img src="diagrams/architecture.png" alt="System architecture" width="760"></p>
 
-**How to read it**
+**How to read it** (the numbers match the boxes in the diagram)
 
-1. The simulator sends AIS messages, compliance events and inspection results into Redis Streams.
-2. Ingestion checks every message and stores it in PostgreSQL, where the features of each hull are kept up to date.
-3. Once a day, the decision agent reads this data, asks the risk scorer and the resolver for help, and proposes K hulls to inspect.
-4. The plan validator checks the plan, or falls back to the scorer's top-K, and the plan goes back to the simulator. The dashboard shows it to the inspector.
+1. **Ingestion, continuous.** The simulator sends AIS messages, compliance events and inspection results into three Redis streams. The ingestion consumer checks every message against its schema. Valid messages are stored as raw and clean rows, and invalid ones go to quarantine. The feature service turns the clean rows into per-hull identity timelines and features.
+2. **Storage.** One PostgreSQL database holds everything: raw and clean rows, quarantine, hull features, and the outputs of the AI layer (plans, every tool call, metrics, and the registry of model versions).
+3. **AI decision, once per simulated day.** Prefect starts the decision agent with the day number and budget K. The agent works only through the MCP tool server. The server reads hull features, calls the risk scorer (loaded from the model store) and the resolver, and accepts the plan through `submit_inspection_plan`. The agent and the resolver both run on the same vLLM model. The plan validator checks the proposed plan. If it is invalid or late, the validator uses the scorer's top-K instead.
+4. **Output.** The final plan is logged, sent back to the simulator through Prefect (thick arrow), and shown in the dashboard. The FastAPI REST API exposes the same data to scripts.
 
-Behind the scenes, Prefect runs the daily cycle, and the agent calls the scorer and the resolver through MCP tools. Model training is shown in Section 5.
+Model training is shown separately in Section 5.
 
 **System boundary.** The simulator is outside the system. It plays the role of the real world: ships, registries and inspection outcomes. Everything inside the "Shifting Hulls system" box is built and evaluated by the project. The only ways in are the Redis streams, and the only way out is the inspection plan.
 
@@ -120,14 +130,26 @@ Behind the scenes, Prefect runs the daily cycle, and the agent calls the scorer 
 | Storage | PostgreSQL | Raw and clean data, identity timelines, plans, metrics |
 | Feature service | Python | Keeps per-hull features up to date (churn, gaps, events) |
 | AI modules | One local LLM on vLLM, LightGBM scorer | See Section 4 |
+| Model store | Versioned files + `models` table | Holds the scorer versions. The current one is loaded at startup |
 | Tool layer | MCP server (Python SDK) | The only way the agent can read data or act |
+| Plan validator | Python | Enforces budget K, the plan schema and the deadline. Falls back to scorer top-K |
 | Orchestration | Prefect | Runs the daily cycle and sends the plan to the simulator |
 | Interface | FastAPI + dashboard | Shows ranked hulls, reasons and metrics. REST API for scripts |
 | Deployment | Docker Compose | Runs all services on one machine |
 
 ### 3.2 One simulated day, step by step
 
-<p align="center"><img src="diagrams/daily-cycle.png" alt="One simulated day" width="680"></p>
+<p align="center"><img src="diagrams/daily-cycle.png" alt="One simulated day" width="760"></p>
+
+Data streams in all day. The decision is made once, at the end of day *d*, using whatever has arrived by then. Late compliance events are therefore simply missing from that day's decision, which is what the *late data* scenario tests. The agent's tools are:
+
+| Tool | Type | Returns |
+|---|---|---|
+| `get_shortlist(m)` | read | Top-*m* hulls by risk score (default *m* = 60), with scores and the main features behind each |
+| `get_timeline(hull)` | read | All MMSIs, names, flags and AIS gaps linked to a hull, with dates |
+| `get_events(hull)` | read | Compliance events linked to a hull, with their publish times |
+| `resolve_identity(records)` | read | Resolver verdict: same hull or not, with a confidence |
+| `submit_inspection_plan(plan)` | **write** | Accepts exactly K hulls with one reason each. The only tool that changes state |
 
 ### 3.3 Security by design
 
@@ -182,6 +204,12 @@ The system has three AI components, each with a separate job and its own metric.
 
 **How the system uses them during operation.** Each simulated day, Prefect starts the agent. The agent calls the scorer and the resolver through MCP tools, gets answers within seconds, and submits a plan. Every call, output and latency is logged. These logs feed the evaluation and later retraining, for example re-scoring after drift (Section 6).
 
+**Retraining policy.**
+
+- The **initial scorer** is trained on development seeds only, using the simulator's ground truth as labels. It is then frozen for all evaluation seeds.
+- **Re-scoring after drift** is tested as a separate condition. On day 15 of each run, the scorer is retrained using only labels the system could really have: its own inspection results plus listing events. The hidden ground truth is not used. A new model version is written to the model store and loaded for days 16–30. Comparing the frozen and retrained conditions shows whether re-scoring recovers the loss caused by drift.
+- The LLM is never retrained. Prompts are frozen before the main experiment, and the prompt version is recorded with every run.
+
 ---
 
 ## 6. Evaluation
@@ -210,6 +238,7 @@ The system has three AI components, each with a separate job and its own metric.
 | Level | Metric |
 |---|---|
 | End-to-end (main) | Shadow hulls caught per 20 inspections, averaged over 30 days, with paired differences and 95% intervals |
+| End-to-end (secondary) | Wasted inspections on legitimate hulls (K minus catches), and the share of the agent's picks that are not in the scorer's top-K (does the agent add anything?) |
 | Resolver | F1, calibration (does a 0.8 confidence mean right 80% of the time?) |
 | Scorer | AUC, precision@K |
 | System | Agent latency per day, queue lag, fallback rate, share of plans delivered on time |
@@ -242,6 +271,36 @@ The system is built and evaluated by the final project-progress milestone on **3
 | 6 | 21–27 Dec | Bug fixes only | **Main experiment:** agent on 10 seeds × 30 days. Drift and load scenarios | Main results table ready |
 | 7 | 28–31 Dec | Bug fixes only | Late data, model server down and prompt injection scenarios. Analysis: paired intervals and success criterion | **Final project-progress milestone, 31 Dec** |
 | – | January 2027 | No new features | Slides, demo and rehearsal | **Final presentation** |
+
+**Risks to the timeline and what we will do**
+
+| Risk | Effect | Mitigation |
+|---|---|---|
+| The local GPU cannot serve a 14B model fast enough (one full run = 10 seeds × 30 days × 1 agent session) | Main experiment does not fit in week 6 | Measure latency in week 2. If one day takes more than about 2 minutes, switch to the 8B fallback. Seeds can run overnight |
+| The agent's tool calls are unreliable (wrong arguments, loops) | Many fallbacks, so the agent is barely tested | Cap tool calls per day. Test tool calling in week 2 before choosing the model. Report the fallback rate as a result in itself |
+| The simulator is too easy or too hard (the churn rule catches almost all or almost no shadow hulls) | Nothing to learn from the comparison | Calibrate against the pilot numbers (churn rule ≈ 12.5, scorer ≈ 9.4 out of 20) in week 3 before running any agent |
+| Danish AIS gives too few shadow hulls for the resolver check | Weak real-data validation | Download more days. The check is a sanity test, and the main result does not depend on it |
+| Holidays in weeks 6–7 | Less working time | Weeks 6–7 hold only experiments and bug fixes. All components must be finished by week 5 |
+
+**How changes to this plan are recorded.** This timeline is our commitment. If it changes, we update this document in a separate commit and add a row to the change log below with the date, what changed and why. The weekly "Done when" column is what we check ourselves against at the end of each week.
+
+---
+
+## 8. Changes since Milestone 1
+
+The RFC (Milestone 1, [Shifting_Hulls_RFC.pdf](Shifting_Hulls_RFC.pdf)) described the same system. Three design decisions have changed since then:
+
+| RFC (1 Nov) | Now (16 Nov) | Why |
+|---|---|---|
+| Resolver on a 4–9B LLM, agent on a separate LLM of up to 27B | One shared ~14B LLM for both roles, with different prompts | Only one model fits on our local GPU at a time. A 14B model is also the size where published entity-matching results exist [1] |
+| Real-data noise and resolver check on US coastal AIS (NOAA) | Danish Maritime Authority AIS | Danish waters lie on the main export route out of the Baltic, so more shadow-tagged hulls pass through. The files are free and updated daily |
+| Drift: "measure whether re-scoring recovers it" | Concrete retraining protocol (Section 5) using only labels the system could observe | Retraining on the simulator's hidden truth would overstate recovery |
+
+### Plan change log
+
+| Date | Change | Reason |
+|---|---|---|
+| 16 Nov 2026 | Initial plan (this document) | Milestone 2 |
 
 ---
 
