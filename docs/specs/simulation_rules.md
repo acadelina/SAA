@@ -197,3 +197,81 @@ The schema names may change during implementation. The semantics above may
 not: a change to what adapts, when, or by how much is a design change and must
 be recorded in the plan's change log.
 
+---
+
+## 4. Signal strength and the negative control
+
+### 4.1 Why this exists
+
+The agent can only beat the scorer through information the scorer cannot use:
+free text (names, registry notes) and timing links between the AIS stream and
+the compliance stream. The team controls how much such information the
+simulator contains. If it is strong, the agent looks good. If it is absent,
+the agent cannot win. A single result at one arbitrary strength would say more
+about our settings than about the agent.
+
+So signal strength is an explicit parameter, we sweep it, and we report the
+agent's gain as a function of it. The zero-signal case is a negative control.
+
+### 4.2 Two channels
+
+Both parameters are in [0, 1] and are **assumptions**. Neither is measured in
+real data: we do not know how much label information real ship names or event
+timing carry.
+
+| Parameter | What it controls | At 0 | At 1 |
+|---|---|---|---|
+| `text_signal` (s_text) | Share of shadow hulls whose name or registry note carries a **true** prior identity (a previous name token, a real prior MMSI, or an explicit re-registration remark) | No shadow hull carries a true hint | Every shadow hull carries a true hint |
+| `coupling_signal` (s_couple) | Share of shadow hull identity changes (MMSI, name, flag) that also produce a matching compliance event within 1 day | Event timing is independent of identity changes for both groups | Every shadow identity change has a matching event within 1 day |
+
+To keep text from being a perfect detector, 5% of **all** hulls (shadow and
+clean) carry a generic registry remark drawn from the same template pool. That
+remark is label-independent: it looks the same in both groups and names no real
+prior identity. Clean hulls produce matching compliance events at a fixed base
+rate of 5% within the same window.
+
+At s = 0 the rate for shadow hulls equals the base rate for clean hulls, so
+neither channel separates the labels. At s = 1 both channels are strong. Any
+intermediate value is linear in the probability that a shadow hull carries the
+tell.
+
+### 4.3 Sweep
+
+Run every method at four strengths:
+
+| Sweep value | s_text | s_couple | Purpose |
+|---|---|---|---|
+| 0.00 | 0.00 | 0.00 | Negative control: no usable text or coupling signal |
+| 0.25 | 0.25 | 0.25 | Weak signal |
+| 0.50 | 0.50 | 0.50 | Moderate signal, the default reporting point |
+| 1.00 | 1.00 | 1.00 | Strong signal, the best case for the agent |
+
+If time allows, add the two off-diagonal corners (s_text = 0, s_couple = 1) and
+(s_text = 1, s_couple = 0) to attribute a gain to one channel. These are
+optional and are reported separately, not used as the main result.
+
+### 4.4 Gain and negative control
+
+For a strength s, let G(s) be the mean paired difference between the agent's
+primary metric and the better baseline's primary metric at the same s, with a
+95% interval. The headline result is the curve G(s) over the four values, not
+one number.
+
+At s = 0 the agent has no information the scorer lacks. The expected gain is
+zero or negative. Predefined rule: if the 95% paired interval of G(0) lies
+entirely above 0, stop and investigate before reporting any positive gain at
+another strength. A positive zero-signal result points to a simulator leak, an
+evaluation bug, or tuning on evaluation seeds. An agent that is worse than the
+scorer at s = 0 is acceptable and should be explained (for example, extra
+sampling variance or fallbacks).
+
+### 4.5 Limitation, stated plainly
+
+A gain at s = 1 is evidence that the agent can use text and cross-stream
+coupling **when they exist in the simulator**. It is not evidence about the
+real world, because we have not measured those strengths in real data. The
+zero-signal control bounds the claim from below, and the sweep shows how the
+claim depends on a setting we chose. The result must be reported this way in
+the final document, not as a single headline number.
+
+
