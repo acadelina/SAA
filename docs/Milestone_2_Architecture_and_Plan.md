@@ -241,7 +241,7 @@ The pilot figures are a sanity band, not targets. They counted repeat catches on
 The headline result is G(s), the mean paired difference between the agent's primary metric and the better baseline's primary metric at the same strength, with a 95% interval. We report the whole curve and never a single pooled number. At s = 0 the agent must not beat the scorer; if its interval lies entirely above zero, we treat that as a simulator leak or evaluation bug and investigate before reporting any other result. This limitation goes in the final report in plain words: a gain at high strength shows that the agent can use these signals when they exist, not that it would gain in the real world.
 
 **Evaluation data.**
-- **Main:** 10 simulator seeds per method, 30 simulated days each, N = 1000 hulls, 5% shadow, K = 20. Each seed is run with every method (paired comparison). These seeds are never used for development.
+- **Main:** 10 evaluation seeds (2001 to 2010), 30 simulated days each, N = 1000 hulls, 5% shadow, K = 20. Every method and every signal strength is run on every seed, with the same fleet within a seed (paired comparison). Development uses seeds 1001 to 1005 for prompts, thresholds, scorer training and debugging; those seeds never appear in the evaluation. Both seed lists are fixed and recorded before the main experiment. Full protocol in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
 - **Resolver check on real data:** shadow-tagged hulls linked by IMO in Danish AIS. Ships pass through rather than stay, so each new day adds new hulls. Two days (5 and 10 Nov 2026) already give 28, and about a week of data will be used.
 
 **Metrics**
@@ -261,6 +261,8 @@ P = (20 / K) * (1 / D) * sum(c_d for d in 1..D)
 ```
 
 where `c_d` is the number of shadow hulls caught on day `d` and `D` = 30. Because a caught hull leaves the fleet, `c_d` counts unique hulls by construction. With K = 20, P is the mean number of catches per day.
+
+**Paired analysis.** For each evaluation seed, compute the difference between the agent and the baseline on the same seed and signal strength: `d_i = P_agent,i - P_baseline,i`. The 95% interval is a paired t-interval on the 10 differences, `d_bar +/- t(0.975, 9) * sd(d) / sqrt(10)`, with 9 degrees of freedom and t = 2.262. As a check, also report a percentile bootstrap interval from 10,000 resamples of the 10 differences. If the two intervals disagree about zero or about the +2 threshold, report both and do not claim success. The interval covers seed-to-seed variation only, not simulator or model version uncertainty. Report the 10 seed-level values.
 
 **Success criterion.** At the strongest signal (s = 1.00), the agent catches at least 2 more shadow hulls per 20 inspections than the better baseline, with the lower end of the 95% interval at or above +2. At s = 0.00, the control condition, the agent must not beat the scorer; a significant gain there counts as a failed control, not a success. Results at the intermediate strengths are reported with intervals and interpreted as a trend across the sweep. If the s = 1.00 criterion is not met, the hypothesis is rejected and the result is reported as it is. We do not select a favourable strength after seeing the results.
 

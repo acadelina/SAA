@@ -312,5 +312,72 @@ definition) and that neither baseline catches almost all or almost none of the
 shadow hulls. Record the calibration run and the measured marginals next to the
 config.
 
+---
+
+## 6. Random seeds and paired analysis
+
+### 6.1 Seed sets
+
+| Set | Seeds | Count | Use |
+|---|---|---|---|
+| Development | 1001 to 1005 | 5 | Prompt tuning, threshold choice, scorer training, debugging, any exploratory run |
+| Evaluation | 2001 to 2010 | 10 | Main experiment and all reported results. Nothing else |
+
+Rules:
+
+- Both lists are fixed before the main experiment and recorded in the config
+  and in the results files.
+- The sets are disjoint. Evaluation seeds are never used to choose a prompt, a
+  threshold, a baseline, a signal strength or a simulator setting. Development
+  seeds are never reported as evaluation results.
+- One base seed per run derives all simulator randomness, the adaptation
+  draws and the LLM sampling seed. The base seed is stored with the run.
+- Every method and every signal strength is run on every evaluation seed. The
+  same fleet (same hulls, same initial identities) is used within a seed; the
+  signal strength changes the text and event content, not the hull list.
+- No evaluation seed is dropped or replaced after seeing its result. If a run
+  crashes for technical reasons, rerun the same seed and log the rerun.
+- The agent runs at temperature 0. vLLM batching can still cause small
+  differences between runs, so the seed is a label for the run, not a promise
+  of bit-identical output. We do not rerun seeds to pick a better result.
+
+### 6.2 Paired differences and confidence interval
+
+For evaluation seed i, with the same estimator and the same signal strength:
+
+```
+d_i = P_agent,i - P_baseline,i
+```
+
+where P is the primary metric from Section 2. Report the mean difference
+
+```
+d_bar = (1 / n) * sum(d_i),  n = 10
+```
+
+and the 95% paired t-interval:
+
+```
+d_bar +/- t(0.975, 9) * sd(d_i) / sqrt(n)
+```
+
+with 9 degrees of freedom and t(0.975, 9) = 2.262. This is a paired t-interval
+on the 10 seed-level differences. It is the interval used in the success
+criterion.
+
+**Bootstrap check.** Also resample the 10 paired differences with replacement
+10,000 times and take the 2.5th and 97.5th percentiles as a percentile
+interval. If the t-interval and the bootstrap interval disagree about whether
+zero (or the +2 threshold) is inside, report both and do not claim success.
+With n = 10 the intervals are approximate; the bootstrap check shows whether
+the t-interval is being driven by one unusual seed.
+
+**What the interval covers.** It covers variation between seeds on this
+simulator version, with this model version and these prompts. It does not cover
+uncertainty about the simulator settings, the LLM version or the real world.
+Report the 10 seed-level values as well as the summary, so a reader can see the
+spread.
+
+
 
 
