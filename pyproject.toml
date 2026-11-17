@@ -26,6 +26,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "integration: needs Docker with real PostgreSQL and Redis; run with make test-integration",
+]
 
 [tool.ruff]
 target-version = "py311"

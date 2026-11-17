@@ -1,7 +1,7 @@
 PYTHON ?= python3
 VENV ?= .venv
 
-.PHONY: install test lint up down db-init
+.PHONY: install test test-integration lint up down db-init
 
 install:
 	$(PYTHON) -m venv $(VENV)
@@ -9,10 +9,14 @@ install:
 	$(VENV)/bin/pip install -e ".[dev]"
 
 test:
-	$(VENV)/bin/pytest
+	$(VENV)/bin/pytest -m "not integration"
+
+test-integration:
+	$(VENV)/bin/pytest -m integration
 
 lint:
 	$(VENV)/bin/ruff check .
+	$(VENV)/bin/mypy
 
 up:
 	docker compose up -d

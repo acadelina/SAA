@@ -26,8 +26,8 @@ Requires Python 3.11+ and Docker.
 ```sh
 cp .env.example .env
 make install          # add PYTHON=python3.11 if python3 is older
-make test
-make lint
+make test             # unit tests, no Docker needed
+make lint             # ruff and mypy
 make up               # Redis and PostgreSQL, bound to 127.0.0.1
 make db-init          # apply sql/001_init.sql (also runs on first start)
 make down
@@ -36,4 +36,10 @@ Run the consumer with local settings:
 ```sh
 set -a; . ./.env; set +a
 .venv/bin/python -m shifting_hulls.consumer
+```
+The ingestion consumer runs on the host, not as a Compose service. Compose starts only the two stateful services, Redis and PostgreSQL. The consumer is a small synchronous process whose logs are most useful in the terminal, and a host process is easier to restart and inspect while the pipeline is being built. It retries the initial PostgreSQL connection and Redis reads with backoff, uses socket timeouts, and handles SIGTERM by finishing the current record and stopping; unacknowledged messages stay in the Redis pending list for the next start. `CONSUMER_MIN_IDLE_MS` (default 60000) and `CONSUMER_PENDING_WARN_S` (default 300) control stale-entry recovery and the pending-age warning.
+
+Integration tests exercise the real PostgreSQL and Redis through an isolated Docker Compose project. They use a unique project name and free host ports (override with `IT_REDIS_PORT` and `IT_POSTGRES_PORT`), apply `sql/001_init.sql`, and remove their containers and volumes when they finish:
+```sh
+make test-integration
 ```

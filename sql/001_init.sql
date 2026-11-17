@@ -1,22 +1,16 @@
 -- Shifting Hulls storage schema.
 -- Safe to run more than once: every object uses IF NOT EXISTS.
 
-CREATE TABLE IF NOT EXISTS raw_ais (
-    message_id TEXT PRIMARY KEY,
+-- Every delivered Redis entry is kept here, keyed on the stream and the Redis
+-- entry id. The payload hash is a SHA-256 of the full raw payload, before any
+-- truncation, so distinct deliveries never collapse into one audit row.
+CREATE TABLE IF NOT EXISTS raw_messages (
+    stream TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
+    payload_sha256 TEXT NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    payload JSONB NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS raw_compliance (
-    message_id TEXT PRIMARY KEY,
-    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    payload JSONB NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS raw_results (
-    message_id TEXT PRIMARY KEY,
-    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    payload JSONB NOT NULL
+    payload JSONB NOT NULL,
+    PRIMARY KEY (stream, entry_id)
 );
 
 CREATE TABLE IF NOT EXISTS clean_ais (
@@ -63,15 +57,20 @@ CREATE TABLE IF NOT EXISTS clean_results (
     UNIQUE (day, plan_id, imo, mmsi)
 );
 
+-- message_id includes the rejection reason, so one payload can be quarantined
+-- under different rules without the first row hiding the second.
+-- payload is text, not jsonb: quarantine must keep values such as NaN that
+-- standard JSON and jsonb refuse, and nothing may be silently dropped.
 CREATE TABLE IF NOT EXISTS quarantine (
     stream TEXT NOT NULL,
     message_id TEXT NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     reason TEXT NOT NULL,
-    payload JSONB NOT NULL,
+    payload TEXT NOT NULL,
     PRIMARY KEY (stream, message_id)
 );
 
+CREATE INDEX IF NOT EXISTS raw_messages_received_at_idx ON raw_messages (received_at);
 CREATE INDEX IF NOT EXISTS clean_ais_mmsi_ts_idx ON clean_ais (mmsi, ts);
 CREATE INDEX IF NOT EXISTS clean_ais_imo_idx ON clean_ais (imo);
 CREATE INDEX IF NOT EXISTS clean_compliance_imo_idx ON clean_compliance (imo);
