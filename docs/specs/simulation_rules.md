@@ -33,17 +33,20 @@ We model the catch as a detention that takes the vessel out of service. Its
 full history remains in the database so that the evaluation can attribute the
 catch, but the hull no longer sends AIS and cannot be inspected.
 
-A replacement shadow hull enters the active fleet on day d + 1 (the next
-simulated day). The replacement keeps the active shadow count at S = 50. It is
-a new hull (new IMO) with a **warm start**: its identity history is drawn from
-the same distribution as the day-0 shadow hulls (number of prior MMSIs, age and
-initial AIS-off rate). Without the warm start a replacement is nearly invisible
-for several days, and catches would measure simulation age rather than agent
-skill.
+A replacement shadow hull enters the active fleet **before the decision** on
+day d + 1 (the next simulated day, `replacement_delay_days = 1`). The
+replacement keeps the active shadow count at S = 50, so every daily decision
+sees the full pool. It is a new hull (new IMO) with a **warm start**: its
+identity history is drawn from the same distribution as the day-0 shadow hulls
+(number of prior MMSIs, age and initial AIS-off rate). Without the warm start a
+replacement is nearly invisible for several days, and catches would measure
+simulation age rather than agent skill.
 
 Replacement is triggered by a catch, not by the agent's score. The agent cannot
 create replacements. It can only catch the hulls that are present. A clean hull
-is never removed and is never replaced. Fleet size N stays constant.
+is never removed and is never replaced. Fleet size N stays constant. The single
+supported value is `caught_shadow_action: remove_and_replace`. A sensitivity
+run may raise `replacement_delay_days`; the rules below then still hold.
 
 **Why this rule.** A fixed pool of 50 shadow hulls cannot support 600
 inspection slots over 30 days. Unique catches would stop after about 50
@@ -73,10 +76,11 @@ The invalid plan and the fallback are logged.
 
 ### 1.4 When the shadow pool is temporarily small
 
-Catches remove hulls before their replacements arrive, so the active shadow
-count can dip below 50 on the day after a large catch day. The worst case is
-catching 20 shadow hulls on two consecutive days, which leaves about 30 active
-shadow hulls. The count returns to 50 on the following day.
+With the default replacement delay of 1 day, replacements arrive before the next
+decision, so no plan ever faces a depleted pool. If a sensitivity run uses a
+longer `replacement_delay_days`, the active shadow count can dip. For example,
+with a delay of 2 days and catches of 20 shadow hulls on two consecutive days,
+the decision on the second day sees about 30 active shadow hulls, not 50.
 
 The metric does not change its denominator when the pool is small. Every day
 contributes exactly K = 20 inspection slots, even if fewer shadow hulls are
@@ -180,6 +184,14 @@ Whether that happens is checked in calibration and reported, not assumed.
 ### 3.3 Config sketch
 
 ```yaml
+inspection:
+  caught_shadow_action: remove_and_replace
+  replacement_delay_days: 1
+  replacement_warm_start: true
+  clean_cooldown_days: 30
+  shadow_cooldown_days: 0        # caught hulls leave before they could return
+  invalid_plan_fallback: scorer_top_k
+
 adaptation:
   enabled: true
   trigger: any_shadow_catch
@@ -230,10 +242,11 @@ remark is label-independent: it looks the same in both groups and names no real
 prior identity. Clean hulls produce matching compliance events at a fixed base
 rate of 5% within the same window.
 
-At s = 0 the rate for shadow hulls equals the base rate for clean hulls, so
-neither channel separates the labels. At s = 1 both channels are strong. Any
-intermediate value is linear in the probability that a shadow hull carries the
-tell.
+At s = 0 neither channel gives shadow hulls more label information than clean
+hulls: text remarks are generic for both groups, and event timing is
+independent of identity changes for both groups. At s = 1 both channels are
+strong. Any intermediate value is linear in the probability that a shadow hull
+carries the tell.
 
 ### 4.3 Sweep
 
@@ -254,8 +267,10 @@ optional and are reported separately, not used as the main result.
 
 For a strength s, let G(s) be the mean paired difference between the agent's
 primary metric and the better baseline's primary metric at the same s, with a
-95% interval. The headline result is the curve G(s) over the four values, not
-one number.
+95% interval. The better baseline is the higher of the churn rule and the
+scorer on the development seeds at that strength, fixed before any evaluation
+seed is run, so the choice cannot be steered by the evaluation results. The
+headline result is the curve G(s) over the four values, not one number.
 
 At s = 0 the agent has no information the scorer lacks. The expected gain is
 zero or negative. Predefined rule: if the 95% paired interval of G(0) lies
@@ -377,7 +392,4 @@ simulator version, with this model version and these prompts. It does not cover
 uncertainty about the simulator settings, the LLM version or the real world.
 Report the 10 seed-level values as well as the summary, so a reader can see the
 spread.
-
-
-
 
