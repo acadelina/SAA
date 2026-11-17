@@ -11,6 +11,9 @@ A simulated port-state-control office: every simulated day, a local LLM agent ch
 |---|---|
 | 1 · RFC | [docs/Shifting_Hulls_RFC.pdf](docs/Shifting_Hulls_RFC.pdf) |
 | 2 · Architecture and implementation plan | [docs/Milestone_2_Architecture_and_Plan.md](docs/Milestone_2_Architecture_and_Plan.md) |
+| Simulator rules (catch, adaptation, seeds) | [docs/specs/simulation_rules.md](docs/specs/simulation_rules.md) |
+| Source of every number in the plan | [docs/evidence_log.md](docs/evidence_log.md) |
+| How we work (branches, commits, what never to commit) | [docs/team_workflow.md](docs/team_workflow.md) |
 
 Diagram sources (Mermaid) are in [docs/diagrams/](docs/diagrams/). To re-render one:
 
