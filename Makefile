@@ -1,7 +1,7 @@
 PYTHON ?= python3
 VENV ?= .venv
 
-.PHONY: install test test-integration lint up down db-init
+.PHONY: install test test-integration lint up down db-init backtest
 
 install:
 	$(PYTHON) -m venv $(VENV)
@@ -13,6 +13,9 @@ test:
 
 test-integration:
 	$(VENV)/bin/pytest -m integration
+
+backtest:
+	$(VENV)/bin/python -I scripts/backtest/run.py report --work work --cutoff 2024-05-31
 
 lint:
 	$(VENV)/bin/ruff check .
