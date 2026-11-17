@@ -260,7 +260,7 @@ where `c_d` is the number of shadow hulls caught on day `d` and `D` = 30. Becaus
 
 | Scenario | What happens | What is measured | Expected behaviour |
 |---|---|---|---|
-| **Drift** | Caught shadow hulls change identity less and switch off AIS more | Drop in catches over time, and recovery after re-scoring | Each method degrades. The speed of the drop is measured |
+| **Drift** | After a catch, uncaught shadow hulls adapt with a 2-day delay: identity churn falls and AIS-off gaps become more likely (parameters in [the simulator rules](specs/simulation_rules.md)) | Catch rate over time, post-replacement catch time, and recovery after re-scoring | Each method degrades. The speed of the drop is measured |
 | **Load** | 10× burst of AIS messages | Queue lag, whether the plan still lands within the simulated day | No data lost, plan on time |
 | **Late data** (key failure) | Compliance stream arrives 6 hours late | Catches with stale data | Plan still delivered, quality loss is measured |
 | **Model server down** (key failure) | The vLLM container crashes mid-day, so both the agent and the resolver are unavailable | Fallback rate, precision@K | The scorer does not depend on the LLM, so the system falls back to scorer top-K and keeps working |

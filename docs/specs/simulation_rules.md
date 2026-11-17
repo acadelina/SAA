@@ -125,3 +125,75 @@ signal strengths.
 | Outside top-K share | Share of the agent's picks that are not in the scorer's top-K that day | Shows whether the agent adds information rather than re-ranking |
 | New-hull yield | Share of catches on hulls that entered after day 0 | Falls if the agent only catches the original fleet |
 | Post-replacement catch time | Median days from a replacement entering to being caught | Measures how quickly the agent adapts to new hulls |
+
+---
+
+## 3. Hull adaptation (drift)
+
+Adaptation is the mechanism that creates drift. It is an **assumption** about
+how an adversary reacts to enforcement, not a measurement.
+
+### 3.1 Rule
+
+- **Trigger:** at least one shadow catch on day d.
+- **Who adapts:** every uncaught shadow hull in the active fleet is a
+  candidate. Clean hulls never adapt.
+- **Probability:** each candidate adapts with `p_adapt = 0.20`, independently.
+  The draw is seeded from the run seed and the day.
+- **Delay:** an adapted hull shows its new behaviour from day d + 2. The delay
+  models the time needed to repaint, re-register or change procedure.
+- **What changes:** the hull's MMSI churn rate (new MMSIs per hull per day) is
+  multiplied by 0.30, and its daily probability of an AIS-off gap is
+  multiplied by 2.0. Name and flag changes follow the same churn multiplier.
+- **Persistence:** the new behaviour lasts for the rest of the run and does not
+  decay. There is no reset and no second adaptation state.
+- **Spread:** it applies to the whole uncaught shadow fleet, not only to the
+  hulls near the catch. We assume operators learn from observed enforcement.
+  This also means drift does not depend on which specific hull the agent
+  happened to pick.
+- **Cap:** at most 80% of the active shadow fleet may be in the adapted state
+  at once. After that, no further hull adapts. A fleet that never changes
+  identity and never transmits is unsolvable, and the comparison between
+  methods would stop meaning anything.
+
+A caught hull cannot adapt because it has left the fleet. This is why the rule
+is fleet-wide and not inspected-hull-only. The inspected hull is removed, so
+there is no "the caught hull changes its behaviour" state.
+
+### 3.2 Defaults and rationale
+
+All values in this table are **defaults and assumptions**. None is measured.
+
+| Parameter | Default | Rationale |
+|---|---|---|
+| `p_adapt` | 0.20 | One catch in five reaches each surviving hull. High enough to create drift within a run, low enough to leave some hulls catchable |
+| `delay_days` | 2 | Behaviour change and re-registration are not instant. Also separates cause and effect in the logs |
+| `mmsi_churn_multiplier` | 0.30 | Churn is the visible signal in the churn rule, so hiding means changing less often |
+| `ais_off_prob_multiplier` | 2.0 | The alternative to changing identity is going dark. Doubling the gap rate trades one visible signal for another |
+| `persistent` | true | Drift should accumulate over 30 days, not wash out. Simpler to explain and to analyse |
+| `max_adapted_fraction` | 0.80 | Keeps the task solvable and every method comparable |
+
+The design intent is that the churn rule loses most of its signal within about
+a week of regular catches, while a catch rate above random remains possible.
+Whether that happens is checked in calibration and reported, not assumed.
+
+### 3.3 Config sketch
+
+```yaml
+adaptation:
+  enabled: true
+  trigger: any_shadow_catch
+  p_adapt: 0.20                      # assumption
+  delay_days: 2                      # assumption
+  applies_to: uncaught_shadow_fleet  # fleet-wide, not inspected hull
+  mmsi_churn_multiplier: 0.30        # assumption
+  ais_off_prob_multiplier: 2.0       # assumption
+  persistent: true
+  decay_half_life_days: null
+  max_adapted_fraction: 0.80
+```
+
+The schema names may change during implementation. The semantics above may
+not: a change to what adapts, when, or by how much is a design change and must
+be recorded in the plan's change log.
+
