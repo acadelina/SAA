@@ -80,16 +80,17 @@ A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 
 
 - **Frequency:** a few events per simulated day, with configurable delay and reordering.
 
-**Stream C: inspection results** (feedback loop). After each day the simulator reports what each inspection found (shadow or not). Inspected shadow hulls may adapt, for example by changing identity less often and switching off AIS more often. This is how drift is created.
+**Stream C: inspection results** (feedback loop). After each day the simulator reports what each inspection found (shadow or not). A shadow outcome is a **catch**: that hull leaves the active fleet and a new shadow hull enters the next day, so the active shadow count stays at 5% of N. A clean hull stays in the fleet and cannot be inspected again for 30 days. Uncaught shadow hulls may adapt after a catch, changing identity less often and switching off AIS more often. This is how drift is created. The full rules for catches, cooldown, replacement and adaptation are in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
 
 | Field | Example | Notes |
 |---|---|---|
 | `day`, `plan_id` | 12, `p-0012` | Which daily plan the inspection belongs to |
 | `imo`, `mmsi` | 9319703, 273456780 | Identity of the inspected hull at inspection time |
-| `outcome` | `shadow` / `clean` | The only ground truth the system ever sees during operation |
+| `outcome` | `shadow` / `clean` | The only ground truth the system ever sees during operation. A `shadow` outcome removes the hull and schedules a replacement |
 | `reported_at` | end of day *d* | Available to the system from day *d*+1 |
 
 - **Frequency:** K messages per simulated day (one per inspected hull).
+- **Counting:** a caught hull leaves the fleet, so every catch is a different hull. "Catches per 20 inspections" counts catches, never repeat inspections of the same hull. A plan with a duplicate hull, a hull already caught, or a hull on cooldown is invalid and falls back to the scorer's top-K.
 - **Labels and fairness of evaluation:** the system only learns labels for hulls it chose to inspect. The full ground truth (which hulls are shadow) stays inside the simulator and is used only by the evaluation scripts, never by the running system.
 
 ### 2.3 How new data enters the system
@@ -220,6 +221,8 @@ The system has three AI components, each with a separate job and its own metric.
 - Per-component outputs: resolver decisions with confidence, and risk scores for all hulls.
 - Run metrics shown on the dashboard and stored for analysis.
 
+**What counts as a catch.** An inspection returns one outcome. A `shadow` outcome is a catch: the hull leaves the active fleet and a replacement enters the next day, so the active shadow count returns to 5%. A `clean` hull stays and goes on a 30-day cooldown. Therefore every catch is a distinct hull and "catches per 20 inspections" never counts the same hull twice. The full rule set is in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
+
 **Baselines.** Four methods are compared on the same simulated fleets:
 
 | Method | Description | Pilot estimate (catches per 20 inspections) |
@@ -237,11 +240,19 @@ The system has three AI components, each with a separate job and its own metric.
 
 | Level | Metric |
 |---|---|
-| End-to-end (main) | Shadow hulls caught per 20 inspections, averaged over 30 days, with paired differences and 95% intervals |
-| End-to-end (secondary) | Wasted inspections on legitimate hulls (K minus catches), and the share of the agent's picks that are not in the scorer's top-K (does the agent add anything?) |
+| End-to-end (main) | Shadow hulls caught per 20 inspections, averaged over 30 days, with paired differences and 95% intervals (formula below) |
+| End-to-end (secondary) | Precision, wasted inspections on legitimate hulls (K minus catches), share of the agent's picks that are not in the scorer's top-K, new-hull yield, and median time from replacement entry to catch |
 | Resolver | F1, calibration (does a 0.8 confidence mean right 80% of the time?) |
 | Scorer | AUC, precision@K |
 | System | Agent latency per day, queue lag, fallback rate, share of plans delivered on time |
+
+**Primary metric formula.** For one run (one seed, one method, one signal strength):
+
+```
+P = (20 / K) * (1 / D) * sum(c_d for d in 1..D)
+```
+
+where `c_d` is the number of shadow hulls caught on day `d` and `D` = 30. Because a caught hull leaves the fleet, `c_d` counts unique hulls by construction. With K = 20, P is the mean number of catches per day.
 
 **Success criterion.** The agent catches at least 2 more shadow hulls per 20 inspections than the better baseline, with the lower end of the 95% interval at or above +2. If not, the hypothesis is rejected, and the result is reported as it is.
 
