@@ -143,6 +143,31 @@ signal strengths.
 | New-hull yield | Share of catches on hulls that entered after day 0 | Falls if the agent only catches the original fleet |
 | Post-replacement catch time | Median days from a replacement entering to being caught | Measures how quickly the agent adapts to new hulls |
 
+**One implementation per metric.** These are the definitions the code must use.
+
+- **Post-replacement catch time:** a replacement not caught by day 30 is
+  censored, not dropped. Report the number caught within 10 days and a
+  Kaplan-Meier median, never the median of caught hulls only.
+- **Outside top-K share:** K is 20, the scorer version is the one frozen for
+  that run, and the top-K is computed over eligible hulls only.
+- **New-hull yield:** catches on hulls that entered after day 0, divided by all
+  catches. When there are no catches, report "not defined", not zero.
+- **Precision:** catches divided by K times D. It is a per-slot rate. The
+  headline is per 20 slots and equals it when K = 20.
+- **Adapted-fraction cap:** the cap counts uncaught shadow hulls in the adapted
+  state and currently in the fleet. When an adapted hull is caught, its slot
+  frees and another hull may adapt later.
+- **Text hint:** fixed per hull at creation for the whole run. A replacement
+  draws its own hint from the same distribution.
+- **Matching compliance event:** same IMO or same MMSI as the identity change,
+  published within 1 day of it, counted once per change.
+
+**What the catch count estimates.** The estimand is catches of distinct hulls
+per inspection slot under removal and warm replacement. It is not the number of
+distinct operators, because a replacement can reproduce the behaviour of the
+hull that was caught. That is intended: the question is how many of the 20
+daily slots find a shadow hull, not how many criminal networks are dismantled.
+
 ---
 
 ## 3. Hull adaptation (drift)
@@ -215,6 +240,12 @@ All values in this table are **defaults and assumptions**. None is measured.
 | `ais_off_prob_multiplier` | 2.0 | The alternative to a clean history is going dark. Doubling the gap rate moves evidence from churn to gaps, which may help a gap-based scorer. That is a known asymmetry, reported rather than corrected |
 | `persistent` | true | Drift should accumulate over 30 days, not wash out. Simpler to explain and to analyse |
 | `max_adapted_fraction` | 0.80 | Keeps the task solvable and every method comparable |
+
+**Identifying drift.** Because adaptation triggers on any catch, every method
+sees it. It is part of the environment, not a treatment of one method. On the
+development seeds, every method is also run with adaptation switched off. The
+drift effect is the difference between the on and off arms at the same seed,
+which separates a real drift from the day-to-day trend caused by the cooldown.
 
 The design intent is that the churn rule loses most of its signal within about
 a week of regular catches, while a catch rate above random remains possible.
@@ -324,6 +355,12 @@ about 4 catches, picking the maximum guesses wrong about half the time when the
 two are equal, and it biases the comparator upward by about 1 catch. Fixing one
 comparator in advance removes that. The headline result is the curve G(s) over
 the four values, not one number.
+
+A secondary contrast is fixed before the run: the same comparison restricted to
+days 1 to 10, before adaptation has had time to spread. The text channel is a
+static hull property and is not reduced by adaptation, while the baselines'
+churn features are. Without the early window, a 30-day gain could come from
+that asymmetry rather than from a better decision on any given day.
 
 At s = 0 the agent has no information the scorer lacks. The expected gain is
 zero or negative. Predefined rule: if the 95% paired interval of G(0) lies
