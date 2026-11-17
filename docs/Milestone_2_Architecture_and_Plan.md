@@ -54,7 +54,7 @@ The project uses **real data** to understand the problem and calibrate the simul
 
 ### 2.2 Simulated data (online, what the system actually runs on)
 
-A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 1000, of which 5% are shadow) and emits two streams with different speeds.
+A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 1000, of which 5% are shadow) and emits three streams: a fast noisy AIS stream, a slow delayed compliance stream, and the daily inspection results that close the feedback loop.
 
 **Stream A: AIS-like messages** (fast, noisy)
 
