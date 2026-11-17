@@ -310,9 +310,10 @@ Set or fit from data:
 The pilot catch figures (random 1.0, churn rule 12.5, scorer 9.4 per 20
 inspections) are a **plausibility range only**. Three reasons:
 
-1. The pilot counted repeat catches on a fixed fleet. The main metric counts
-   unique hulls under replacement, so the numbers are not directly comparable
-   even on the same simulator.
+1. The pilot is a single-day snapshot: one top-20 list on a freshly drawn
+   fleet. The main metric averages 30 days in which caught hulls are removed,
+   so the easiest shadow hulls go first and later days are harder. Expect the
+   30-day average to sit below the pilot figures.
 2. The pilot was small. The paired top-20 difference between the churn rule
    and the scorer was -2.8, with a 95% interval of -7 to +1. The ordering is
    not established.
@@ -322,8 +323,7 @@ inspections) are a **plausibility range only**. Three reasons:
 
 Do not tune any parameter to reproduce 12.5, 9.4, or the claim that the churn
 rule beats the scorer. After calibration, check only that the figures are in
-the same broad range (single digits to low teens on the repeat-catch
-definition) and that neither baseline catches almost all or almost none of the
+the same broad range (single digits to low teens on day 1) and that neither baseline catches almost all or almost none of the
 shadow hulls. Record the calibration run and the measured marginals next to the
 config.
 
