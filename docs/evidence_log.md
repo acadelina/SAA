@@ -51,3 +51,16 @@ These come from `scripts/analysis/check_simulator_design.py`, which is in the re
 | Pass rate, true gain +2.5, SD 1.0 | 0.30 | Same | Same | 80% power needs about 34 seeds |
 | Implied AUC of the churn rule's 12.5 of 20 at 5% prevalence | About 0.89 | Our binormal approximation | Equal-variance binormal, precision@20 at 5% prevalence | An approximation with a distributional assumption, not a measurement. The measured AUC of 0.84 implies about 9.5 of 20. The discrepancy with 12.5 is unresolved |
 
+
+## Time split backtest of the churn signal (real data, our own measurement)
+
+Code in `scripts/backtest/`, design fixed before any control was fetched in [docs/backtest/time_split_design.md](backtest/time_split_design.md), full tables in [docs/backtest/time_split_results.md](backtest/time_split_results.md). Data: OpenSanctions maritime export and Global Fishing Watch vessel identity, both of 17 November 2026.
+
+| Claim | Value | Source | How it was measured | Caveat |
+|---|---|---|---|---|
+| Prospective AUC of the churn count within tankers | 0.62, interval [0.55, 0.69] | Our backtest, 182 dated positives against 766 controls | Features from GFW identity records dated on or before 31 May 2024 only; every positive listed after it | GFW retro-links MMSIs to IMOs, and the direction of that bias is unknown |
+| Prospective AUC of the churn rate within tankers | 0.56, interval [0.48, 0.63] | Same | Same | The pre-registered falsifier was a lower bound below 0.60 on this figure. It fires |
+| AUC of history length alone within tankers | 0.59, interval [0.53, 0.66] | Same | Same | Every churn feature in the tanker cut lands within about 0.06 of this, so the tanker cut shows little that is behavioural |
+| AUC of the same features over full history, no cutoff | 0.84 overall, 0.78 within tankers | Same features, cutoff removed | Exploratory, run after the main result | Reproduces the pilot's 0.84 and 0.77. The pilot cohort was 149 hulls per side, this one is 182 and 766, so the match is descriptive rather than a replication |
+| Prospective AUC of a logistic model on all features, temporal holdout | 0.78 all hulls, 0.64 tankers | Same | Train on positives listed 2024-06 to 2024-12, test on those listed 2025-02 | Only positives are split by date, so this is a weak temporal test |
+| Rows classified as tankers among positives against controls | 182 of 182 against 121 of 766 | Same | GFW vessel class containing "tanker" | The all-hull comparison partly measures ship type, not churn |

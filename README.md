@@ -12,6 +12,7 @@ A simulated port-state-control office: every simulated day, a local LLM agent ch
 | 1 · RFC | [docs/Shifting_Hulls_RFC.pdf](docs/Shifting_Hulls_RFC.pdf) |
 | 2 · Architecture and implementation plan | [docs/Milestone_2_Architecture_and_Plan.md](docs/Milestone_2_Architecture_and_Plan.md) |
 | Simulator rules (catch, adaptation, seeds) | [docs/specs/simulation_rules.md](docs/specs/simulation_rules.md) |
+| Time split backtest of the churn signal (design, results, data) | [docs/backtest/](docs/backtest/) |
 | Source of every number in the plan | [docs/evidence_log.md](docs/evidence_log.md) |
 | How we work (branches, commits, what never to commit) | [docs/team_workflow.md](docs/team_workflow.md) |
 
@@ -42,4 +43,11 @@ The ingestion consumer runs on the host, not as a Compose service. Compose start
 Integration tests exercise the real PostgreSQL and Redis through an isolated Docker Compose project. They use a unique project name and free host ports (override with `IT_REDIS_PORT` and `IT_POSTGRES_PORT`), apply `sql/001_init.sql`, and remove their containers and volumes when they finish:
 ```sh
 make test-integration
+```
+
+The churn backtest in `docs/backtest/` needs two external exports and a Global Fishing Watch token, all of which stay out of the repository. Its unit tests run as part of `make test` and need neither. See [docs/backtest/data_access.md](docs/backtest/data_access.md) for the setup; once the data is in place:
+```sh
+python -I scripts/backtest/run.py cohort --data-dir data/opensanctions
+python -I scripts/backtest/run.py fetch  --work work --cohort work/cohort.json
+make backtest
 ```
