@@ -49,3 +49,5 @@ These come from `scripts/analysis/check_simulator_design.py`, which is in the re
 | Change in that count from the x0.30 adaptation | 1.9 events across the fleet | Arithmetic | 0.70 * 2.67 | Why adaptation acts on visible history, not the future rate |
 | Pass rate of "lower 95% bound at or above +2", true gain +2 | 0.026 | Our simulation, 20,000 draws | Paired t with 10 seeds | The reason the success rule changed |
 | Pass rate, true gain +2.5, SD 1.0 | 0.30 | Same | Same | 80% power needs about 34 seeds |
+| Implied AUC of the churn rule's 12.5 of 20 at 5% prevalence | About 0.89 | Our binormal approximation | Equal-variance binormal, precision@20 at 5% prevalence | An approximation with a distributional assumption, not a measurement. The measured one-feature AUC of 0.84 implies about 9.5 of 20, so the pilot churn rule was not a single-feature ranker |
+
