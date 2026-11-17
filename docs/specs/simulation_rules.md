@@ -51,10 +51,13 @@ run may raise `replacement_delay_days`; the rules below then still hold.
 **Why this rule.** A fixed pool of 50 shadow hulls cannot support 600
 inspection slots over 30 days. Unique catches would stop after about 50
 catches, and the metric would collapse in the last two thirds of every run.
-Steady replacement keeps the task constant for the whole run and makes every
-catch a distinct hull, so there is no question about double counting. The cost
-is that the simulator is a steady-state testbed, not a model of how the real
-shadow fleet grows or shrinks. We state that cost, we do not hide it.
+Steady replacement keeps the shadow pool at S for the whole run and makes
+every catch a distinct hull, so there is no question about double counting.
+The eligible mix still shifts, because the clean cooldown removes hulls from
+the pool (Section 1.3), so the task is not fully stationary. We measure and
+report that shift rather than assume it away. The larger cost is that the
+simulator is a steady-state testbed, not a model of how the real shadow fleet
+grows or shrinks. We state that cost, we do not hide it.
 
 **Rejected alternative.** Keep caught hulls in the fleet and flag them. Then
 the scorer and the agent could spend slots on known hulls, "catches per 20
@@ -64,10 +67,20 @@ does not use the flagging variant.
 
 ### 1.3 Cooldown for clean hulls
 
-An inspected clean hull cannot be inspected again for 30 days, which is the
-length of a run. In practice every hull is inspected at most once per run. This
-mirrors the real port-state-control re-inspection cycle, which is longer than
-our run, and it stops an agent from filling slots with the same clean hulls.
+An inspected clean hull cannot be inspected again for 7 days. This is a
+compressed version of the real port-state-control re-inspection cycle, which
+is much longer than a run, and it stops an agent from filling slots with the
+same clean hulls.
+
+The cooldown has a side effect that must be stated. Inspected clean hulls leave
+the eligible pool for a week, so the shadow share among eligible hulls rises
+from 5% on day 1 to about 8% on day 30, and a uniformly random picker averages
+about 1.5 catches per day over the run, not the 1.0 it gets on day 1. A 30-day
+cooldown would make this much larger, close to 2.0 per day, and is not used.
+The random baseline is therefore measured on the simulator and reported with
+the results. The daily counts of eligible hulls and eligible shadow hulls are
+logged, and `scripts/analysis/check_simulator_design.py` reproduces all of
+these figures.
 
 A plan that names a hull on cooldown, a hull that has left the fleet, or the
 same hull twice is invalid. The plan validator rejects it, and the system falls
@@ -146,9 +159,12 @@ how an adversary reacts to enforcement, not a measurement.
   The draw is seeded from the run seed and the day.
 - **Delay:** an adapted hull shows its new behaviour from day d + 2. The delay
   models the time needed to repaint, re-register or change procedure.
-- **What changes:** the hull's MMSI churn rate (new MMSIs per hull per day) is
-  multiplied by 0.30, and its daily probability of an AIS-off gap is
-  multiplied by 2.0. Name and flag changes follow the same churn multiplier.
+- **What changes:** the hull hides its history, not only its future. Its
+  visible prior identity history is shortened: the registry shows a fraction
+  (default 0.30) of its earlier MMSIs, names and flags, so the count of prior
+  identities that the churn rule ranks on falls. Its daily probability of an
+  AIS-off gap is multiplied by 2.0. The hull keeps operating under its current
+  identity; it does not change identity in response.
 - **Persistence:** the new behaviour lasts for the rest of the run and does not
   decay. There is no reset and no second adaptation state.
 - **Spread:** it applies to the whole uncaught shadow fleet, not only to the
@@ -164,6 +180,29 @@ A caught hull cannot adapt because it has left the fleet. This is why the rule
 is fleet-wide and not inspected-hull-only. The inspected hull is removed, so
 there is no "the caught hull changes its behaviour" state.
 
+### 3.1.1 Why adaptation acts on history, not on the future rate
+
+The measured churn rate is 0.65 new MMSIs per hull-year, which is 0.00178 per
+hull-day. Over 30 days that is 0.053 new MMSIs per hull, or about 2.7 across
+the whole 50-hull shadow fleet. Multiplying the future rate by 0.30 changes
+that by about 1.9 events over the whole run. A within-run count of new MMSIs
+is therefore indistinguishable from zero, and it cannot be the feature the
+churn rule uses.
+
+The churn rule ranks hulls on their **historical** count of prior identities,
+which is what the pilot measured and what a port-state office can actually
+see. That count is fixed once a run starts, so the only way adaptation can
+erode it is to change what the registry shows. This is also the more realistic
+model: an operator that re-registers cleanly does not remove its old history
+from the ship registry, but its old names stop being linkable to it.
+
+The consequence is a testable prediction: adapted hulls should lose churn-rule
+score within a few days, while a detector that uses fresh AIS evidence (gaps,
+track behaviour) should keep working, because going dark is the other side of
+the trade. If churn-rule precision does not fall measurably by day 10 in a
+drift run, the adaptation is inert. That is a result to report, not something
+to fix by turning parameters until the expected pattern appears.
+
 ### 3.2 Defaults and rationale
 
 All values in this table are **defaults and assumptions**. None is measured.
@@ -172,14 +211,18 @@ All values in this table are **defaults and assumptions**. None is measured.
 |---|---|---|
 | `p_adapt` | 0.20 | One catch in five reaches each surviving hull. High enough to create drift within a run, low enough to leave some hulls catchable |
 | `delay_days` | 2 | Behaviour change and re-registration are not instant. Also separates cause and effect in the logs |
-| `mmsi_churn_multiplier` | 0.30 | Churn is the visible signal in the churn rule, so hiding means changing less often |
-| `ais_off_prob_multiplier` | 2.0 | The alternative to changing identity is going dark. Doubling the gap rate trades one visible signal for another |
+| `visible_history_multiplier` | 0.30 | The churn rule reads the registry history, so hiding means showing fewer prior identities. The name is a working title; the semantics are what matter |
+| `ais_off_prob_multiplier` | 2.0 | The alternative to a clean history is going dark. Doubling the gap rate moves evidence from churn to gaps, which may help a gap-based scorer. That is a known asymmetry, reported rather than corrected |
 | `persistent` | true | Drift should accumulate over 30 days, not wash out. Simpler to explain and to analyse |
 | `max_adapted_fraction` | 0.80 | Keeps the task solvable and every method comparable |
 
 The design intent is that the churn rule loses most of its signal within about
 a week of regular catches, while a catch rate above random remains possible.
-Whether that happens is checked in calibration and reported, not assumed.
+This is a prediction, not an assumption: it is checked against the measured
+churn-rule precision by day (Section 3.1.1), and the adapted-fraction
+trajectory is reported. With `p_adapt = 0.20` per day, fleet-wide and
+cumulative, roughly half the uncaught shadow fleet is adapted by day 5 and the
+80% cap is reached around day 8.
 
 ### 3.3 Config sketch
 
@@ -188,7 +231,7 @@ inspection:
   caught_shadow_action: remove_and_replace
   replacement_delay_days: 1
   replacement_warm_start: true
-  clean_cooldown_days: 30
+  clean_cooldown_days: 7          # measured baseline in Section 1.3
   shadow_cooldown_days: 0        # caught hulls leave before they could return
   invalid_plan_fallback: scorer_top_k
 
@@ -198,7 +241,7 @@ adaptation:
   p_adapt: 0.20                      # assumption
   delay_days: 2                      # assumption
   applies_to: uncaught_shadow_fleet  # fleet-wide, not inspected hull
-  mmsi_churn_multiplier: 0.30        # assumption
+  visible_history_multiplier: 0.30   # assumption
   ais_off_prob_multiplier: 2.0       # assumption
   persistent: true
   decay_half_life_days: null
@@ -239,8 +282,11 @@ timing carry.
 To keep text from being a perfect detector, 5% of **all** hulls (shadow and
 clean) carry a generic registry remark drawn from the same template pool. That
 remark is label-independent: it looks the same in both groups and names no real
-prior identity. Clean hulls produce matching compliance events at a fixed base
-rate of 5% within the same window.
+prior identity. Matching compliance events are drawn per **hull-day** for both
+groups at the same base rate of 5%, not per identity change. Defining the rate
+per identity change would make it label-correlated, because shadow hulls change
+identity more often. The s = 0 check includes asserting that label-blind event
+counts do not differ between the two groups.
 
 At s = 0 neither channel gives shadow hulls more label information than clean
 hulls: text remarks are generic for both groups, and event timing is
@@ -266,19 +312,33 @@ optional and are reported separately, not used as the main result.
 ### 4.4 Gain and negative control
 
 For a strength s, let G(s) be the mean paired difference between the agent's
-primary metric and the better baseline's primary metric at the same s, with a
-95% interval. The better baseline is the higher of the churn rule and the
-scorer on the development seeds at that strength, fixed before any evaluation
-seed is run, so the choice cannot be steered by the evaluation results. The
-headline result is the curve G(s) over the four values, not one number.
+primary metric and **the scorer's** primary metric at the same s, with a 95%
+interval. The scorer is the pre-specified comparator because it is the
+deployable method and it already contains the churn features, so beating it is
+the stronger claim. The churn rule is reported alongside as a second,
+descriptive comparator.
+
+An earlier draft chose the higher of the two baselines on development seeds.
+That is dropped. With 5 development seeds and a per-seed standard deviation of
+about 4 catches, picking the maximum guesses wrong about half the time when the
+two are equal, and it biases the comparator upward by about 1 catch. Fixing one
+comparator in advance removes that. The headline result is the curve G(s) over
+the four values, not one number.
 
 At s = 0 the agent has no information the scorer lacks. The expected gain is
 zero or negative. Predefined rule: if the 95% paired interval of G(0) lies
 entirely above 0, stop and investigate before reporting any positive gain at
-another strength. A positive zero-signal result points to a simulator leak, an
-evaluation bug, or tuning on evaluation seeds. An agent that is worse than the
-scorer at s = 0 is acceptable and should be explained (for example, extra
-sampling variance or fallbacks).
+another strength. A positive zero-signal result is evidence of a simulator
+leak, an evaluation bug, tuning on evaluation seeds, or a better decision rule
+over the same features, and the audit has to say which one it was. It is not
+fatal by itself.
+
+The control is not very powerful. Ten seeds detect a leak of about 1 catch per
+20 inspections 80% of the time, but a leak of 0.5 catches only about 30% of the
+time. We report that limit rather than describing the control as a guarantee.
+As an extra check, if G(0) is positive, the agent is rerun with the text and
+coupling channels replaced by scrambled versions, to separate a leak from a
+better ranking rule.
 
 ### 4.5 Limitation, stated plainly
 
@@ -311,9 +371,13 @@ The pilot catch figures (random 1.0, churn rule 12.5, scorer 9.4 per 20
 inspections) are a **plausibility range only**. Three reasons:
 
 1. The pilot is a single-day snapshot: one top-20 list on a freshly drawn
-   fleet. The main metric averages 30 days in which caught hulls are removed,
-   so the easiest shadow hulls go first and later days are harder. Expect the
-   30-day average to sit below the pilot figures.
+   fleet. The main metric averages 30 days in which caught hulls are removed
+   and replacements enter warm-started, so the shadow pool itself stays
+   constant. What changes is the eligible mix: the clean cooldown lifts the
+   shadow share among eligible hulls from 5% toward 8% by day 30, which makes
+   later days slightly easier. Expect the 30-day averages to differ from the
+   pilot for both reasons, and read the measured random baseline (about 1.5
+   per day, Section 1.3) as the floor, not 1.0.
 2. The pilot was small. The paired top-20 difference between the churn rule
    and the scorer was -2.8, with a 95% interval of -7 to +1. The ordering is
    not established.
@@ -348,8 +412,11 @@ Rules:
 - One base seed per run derives all simulator randomness, the adaptation
   draws and the LLM sampling seed. The base seed is stored with the run.
 - Every method and every signal strength is run on every evaluation seed. The
-  same fleet (same hulls, same initial identities) is used within a seed; the
-  signal strength changes the text and event content, not the hull list.
+  same initial fleet (same hulls, same day-0 identities) and the same
+  exogenous random draws are used within a seed; the signal strength changes
+  the text and event content, not the hull list. Methods diverge after day 0
+  because they catch different hulls, so pairing removes only part of the
+  between-seed variance.
 - No evaluation seed is dropped or replaced after seeing its result. If a run
   crashes for technical reasons, rerun the same seed and log the rerun.
 - The agent runs at temperature 0. vLLM batching can still cause small
@@ -382,10 +449,11 @@ criterion.
 
 **Bootstrap check.** Also resample the 10 paired differences with replacement
 10,000 times and take the 2.5th and 97.5th percentiles as a percentile
-interval. If the t-interval and the bootstrap interval disagree about whether
-zero (or the +2 threshold) is inside, report both and do not claim success.
-With n = 10 the intervals are approximate; the bootstrap check shows whether
-the t-interval is being driven by one unusual seed.
+interval. Report it as a diagnostic. It does not veto the pre-registered
+t-interval: at n = 10 a percentile bootstrap covers the true value about 90%
+of the time, not 95%, so it is slightly anti-conservative near a boundary. If
+the two intervals disagree, report both and say so; the t-interval is the one
+in the success rule.
 
 **What the interval covers.** It covers variation between seeds on this
 simulator version, with this model version and these prompts. It does not cover
@@ -393,3 +461,36 @@ uncertainty about the simulator settings, the LLM version or the real world.
 Report the 10 seed-level values as well as the summary, so a reader can see the
 spread.
 
+
+### 6.3 Power of the success rule
+
+The earlier formulation asked whether the **lower** end of the 95% interval was
+at or above +2. That is a test of H0: the gain is at most +2, dressed up as a
+target. If the true gain is exactly +2, it passes about 2.6% of the time.
+`scripts/analysis/check_simulator_design.py` computes it:
+
+| True gain per 20 | SD 0.5 | SD 1.0 |
+|---|---|---|
+| +2.0 | 0.03 | 0.03 |
+| +2.5 | 0.80 | 0.30 |
+| +3.0 | 1.00 | 0.80 |
+
+The rule used instead, in order of importance:
+
+1. **Primary test.** One-sided superiority against zero: the lower end of the
+   one-sided 95% interval on G(1) must be above 0. With a true gain of +2 and
+   SD 1.0 this passes about 80% of the time, and with SD 0.5 essentially
+   always. With 10 seeds this is the strongest claim the design can support.
+2. **Smallest effect of interest.** Pre-registered at +1 catch per 20
+   inspections. If the interval excludes +1 as well, the result is stated as
+   large enough to matter. If it does not, the result is reported as a gain
+   whose practical size is unresolved.
+3. **Descriptive target.** +2 catches per 20 inspections stays in the plan and
+   the report as the size the team expected, with its interval. It is not the
+   pass condition.
+
+If the team later wants +2 as the inferential margin, the number of evaluation
+seeds has to rise. At a true gain of +2.5 and SD 1.0, 80% power against a +2
+margin needs about 34 seeds, which is more than the available evaluation
+budget. Pre-register whichever rule is chosen before any evaluation seed is
+run, and do not switch after seeing the result.

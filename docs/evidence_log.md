@@ -36,3 +36,16 @@ Every number the Milestone 2 plan relies on, with where it came from and what li
 | NOAA pilot day shadow-tagged matches | 26 hulls | Pilot script | Same join, restricted to shadow tags | One day only |
 | NOAA shadow matches with a different MMSI | 25 of 26 hulls | Pilot script | Compared broadcast MMSI with the listed MMSI | Partly explained by time drift between the 2023 file and the current list |
 | Age gap, NOAA pilot file to sanctions snapshot | About 3 years | External | January 2023 file against a 15 Nov 2026 snapshot | Uses the snapshot date, not the date each designation was made |
+
+## Simulator design checks (our own computation, not data)
+
+These come from `scripts/analysis/check_simulator_design.py`, which is in the repo and reproducible.
+
+| Claim | Value | Source | How it was measured | Caveat |
+|---|---|---|---|---|
+| Random picker, 30-day mean, 7-day clean cooldown | 1.54 catches per day | Our Monte Carlo, 200 seeded runs | Uniform pick over eligible hulls, removal plus warm-start replacement | Simulator assumption, not data |
+| Random picker, 30-day mean, 30-day clean cooldown | 1.96 catches per day | Same script | Same, cooldown set to 30 | This is why the 30-day cooldown was dropped |
+| New MMSIs per shadow hull in 30 days at 0.65 per year | 0.053 per hull, 2.7 across the fleet | Arithmetic on the measured annual rate | 0.65 / 365 * 30, times 50 hulls | Within-run churn is too small to be a feature |
+| Change in that count from the x0.30 adaptation | 1.9 events across the fleet | Arithmetic | 0.70 * 2.67 | Why adaptation acts on visible history, not the future rate |
+| Pass rate of "lower 95% bound at or above +2", true gain +2 | 0.026 | Our simulation, 20,000 draws | Paired t with 10 seeds | The reason the success rule changed |
+| Pass rate, true gain +2.5, SD 1.0 | 0.30 | Same | Same | 80% power needs about 34 seeds |
