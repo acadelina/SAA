@@ -82,16 +82,17 @@ A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 
 
 - **Frequency:** a few events per simulated day, with configurable delay and reordering.
 
-**Stream C: inspection results** (feedback loop). After each day the simulator reports what each inspection found (shadow or not). Inspected shadow hulls may adapt, for example by changing identity less often and switching off AIS more often. This is how drift is created.
+**Stream C: inspection results** (feedback loop). After each day the simulator reports what each inspection found (shadow or not). A shadow outcome is a **catch**: that hull leaves the active fleet and a new shadow hull enters the next day, so the active shadow count stays at 5% of N. A clean hull stays in the fleet and cannot be inspected again for 30 days. Uncaught shadow hulls may adapt after a catch, changing identity less often and switching off AIS more often. This is how drift is created. The full rules for catches, cooldown, replacement and adaptation are in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
 
 | Field | Example | Notes |
 |---|---|---|
 | `day`, `plan_id` | 12, `p-0012` | Which daily plan the inspection belongs to |
 | `imo`, `mmsi` | 9319703, 273456780 | Identity of the inspected hull at inspection time |
-| `outcome` | `shadow` / `clean` | The only ground truth the system ever sees during operation |
+| `outcome` | `shadow` / `clean` | The only ground truth the system ever sees during operation. A `shadow` outcome removes the hull and schedules a replacement |
 | `reported_at` | end of day *d* | Available to the system from day *d*+1 |
 
 - **Frequency:** K messages per simulated day (one per inspected hull).
+- **Counting:** a caught hull leaves the fleet, so every catch is a different hull. "Catches per 20 inspections" counts catches, never repeat inspections of the same hull. A plan with a duplicate hull, a hull already caught, or a hull on cooldown is invalid and falls back to the scorer's top-K.
 - **Labels and fairness of evaluation:** the system only learns labels for hulls it chose to inspect. The full ground truth (which hulls are shadow) stays inside the simulator and is used only by the evaluation scripts, never by the running system.
 
 ### 2.3 How new data enters the system
@@ -222,36 +223,56 @@ The system has three AI components, each with a separate job and its own metric.
 - Per-component outputs: resolver decisions with confidence, and risk scores for all hulls.
 - Run metrics shown on the dashboard and stored for analysis.
 
+**What counts as a catch.** An inspection returns one outcome. A `shadow` outcome is a catch: the hull leaves the active fleet and a replacement enters the next day, so the active shadow count returns to 5%. A `clean` hull stays and goes on a 30-day cooldown. Therefore every catch is a distinct hull and "catches per 20 inspections" never counts the same hull twice. The full rule set is in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
+
 **Baselines.** Four methods are compared on the same simulated fleets:
 
-| Method | Description | Pilot estimate (catches per 20 inspections) |
+| Method | Description | Pilot figure (repeat-catch count, plausibility only) |
 |---|---|---|
 | Random | Pick K hulls at random | 1.0 |
-| Churn rule | Rank by number of new MMSIs, best threshold | 12.5 |
+| Churn rule | Rank by number of new MMSIs, threshold chosen on development seeds | 12.5 |
 | Scorer alone | Gradient-boosted model, top-K | 9.4 |
 | **Agent** | Local LLM agent with tools | target: best baseline **+2 or more** |
 
+The pilot figures are a sanity band, not targets. They counted repeat catches on a fixed fleet, so they are not numerically comparable with the main unique-catch metric. The pilot was also small: the paired top-20 difference between the churn rule and the scorer was -2.8, with a 95% interval of -7 to +1, so the ordering of those two baselines is not established.
+
+**Calibration.** The simulator is calibrated to measured marginals: MMSI churn at 0.65 per vessel-year for shadow hulls and 0.18 for other hulls; 15 to 20% of hulls with two active MMSIs; missing-field rates from Danish AIS (draught 28%, navigational status 17%, cargo type 83%, IMO 42%); and AIS gap and position jump rates measured in weeks 1 and 2. The full stance is in [the simulator rules](specs/simulation_rules.md). No parameter is tuned to reproduce 12.5, 9.4 or the churn-above-scorer ordering. After calibration we check only that the figures are in the same broad range and that neither baseline catches almost all or almost no shadow hulls. (This replaces the earlier "calibrate until churn about 12.5, scorer about 9.4" wording; that wording is still present in Section 7 and should be removed by its owner.)
+
+**Signal strength (the main result is a curve).** The agent can only beat the scorer through two channels: free text and coupling between the AIS and compliance streams. The team controls how strong those channels are, so a win at one setting could be an artifact of the simulator. We therefore make strength explicit with two parameters, `text_signal` and `coupling_signal`, both in [0, 1]. The main experiment uses a single sweep variable s with `text_signal = coupling_signal = s` at four values: 0.00, 0.25, 0.50 and 1.00. At s = 0 neither channel carries label information. Definitions and the optional two-channel check are in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
+
+The headline result is G(s), the mean paired difference between the agent's primary metric and the better baseline's primary metric at the same strength, with a 95% interval. The better baseline is the higher of the churn rule and the scorer on development seeds at that strength, chosen and frozen before the evaluation seeds are run. We report the whole curve and never a single pooled number. At s = 0 the agent must not beat the scorer; if its interval lies entirely above zero, we treat that as a simulator leak or evaluation bug and investigate before reporting any other result. This limitation goes in the final report in plain words: a gain at high strength shows that the agent can use these signals when they exist, not that it would gain in the real world.
+
 **Evaluation data.**
-- **Main:** 10 simulator seeds per method, 30 simulated days each, N = 1000 hulls, 5% shadow, K = 20. Each seed is run with every method (paired comparison). These seeds are never used for development.
+- **Main:** 10 evaluation seeds (2001 to 2010), 30 simulated days each, N = 1000 hulls, 5% shadow, K = 20. Every method and every signal strength is run on every seed, with the same fleet within a seed (paired comparison). Development uses seeds 1001 to 1005 for prompts, thresholds, scorer training and debugging; those seeds never appear in the evaluation. Both seed lists are fixed and recorded before the main experiment. Full protocol in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
 - **Resolver check on real data:** shadow-tagged hulls linked by IMO in Danish AIS. Ships pass through rather than stay, so each new day adds new hulls. Two days (5 and 10 Nov 2026) already give 28, and about a week of data will be used.
 
 **Metrics**
 
 | Level | Metric |
 |---|---|
-| End-to-end (main) | Shadow hulls caught per 20 inspections, averaged over 30 days, with paired differences and 95% intervals |
-| End-to-end (secondary) | Wasted inspections on legitimate hulls (K minus catches), and the share of the agent's picks that are not in the scorer's top-K (does the agent add anything?) |
+| End-to-end (main) | Shadow hulls caught per 20 inspections, averaged over 30 days, with paired differences and 95% intervals (formula below) |
+| End-to-end (secondary) | Precision, wasted inspections on legitimate hulls (K minus catches), share of the agent's picks that are not in the scorer's top-K, new-hull yield, and median time from replacement entry to catch |
 | Resolver | F1, calibration (does a 0.8 confidence mean right 80% of the time?) |
 | Scorer | AUC, precision@K |
 | System | Agent latency per day, queue lag, fallback rate, share of plans delivered on time |
 
-**Success criterion.** The agent catches at least 2 more shadow hulls per 20 inspections than the better baseline, with the lower end of the 95% interval at or above +2. If not, the hypothesis is rejected, and the result is reported as it is.
+**Primary metric formula.** For one run (one seed, one method, one signal strength):
+
+```
+P = (20 / K) * (1 / D) * sum(c_d for d in 1..D)
+```
+
+where `c_d` is the number of shadow hulls caught on day `d` and `D` = 30. Because a caught hull leaves the fleet, `c_d` counts unique hulls by construction. With K = 20, P is the mean number of catches per day.
+
+**Paired analysis.** For each evaluation seed, compute the difference between the agent and the baseline on the same seed and signal strength: `d_i = P_agent,i - P_baseline,i`. The 95% interval is a paired t-interval on the 10 differences, `d_bar +/- t(0.975, 9) * sd(d) / sqrt(10)`, with 9 degrees of freedom and t = 2.262. As a check, also report a percentile bootstrap interval from 10,000 resamples of the 10 differences. If the two intervals disagree about zero or about the +2 threshold, report both and do not claim success. The interval covers seed-to-seed variation only, not simulator or model version uncertainty. Report the 10 seed-level values.
+
+**Success criterion.** At the strongest signal (s = 1.00), the agent catches at least 2 more shadow hulls per 20 inspections than the better baseline, with the lower end of the 95% interval at or above +2. At s = 0.00, the control condition, the agent must not beat the scorer; a significant gain there counts as a failed control, not a success. Results at the intermediate strengths are reported with intervals and interpreted as a trend across the sweep. If the s = 1.00 criterion is not met, the hypothesis is rejected and the result is reported as it is. We do not select a favourable strength after seeing the results.
 
 **Scenarios and failure cases**
 
 | Scenario | What happens | What is measured | Expected behaviour |
 |---|---|---|---|
-| **Drift** | Caught shadow hulls change identity less and switch off AIS more | Drop in catches over time, and recovery after re-scoring | Each method degrades. The speed of the drop is measured |
+| **Drift** | After a catch, uncaught shadow hulls adapt with a 2-day delay: identity churn falls and AIS-off gaps become more likely (parameters in [the simulator rules](specs/simulation_rules.md)) | Catch rate over time, post-replacement catch time, and recovery after re-scoring | Each method degrades. The speed of the drop is measured |
 | **Load** | 10× burst of AIS messages | Queue lag, whether the plan still lands within the simulated day | No data lost, plan on time |
 | **Late data** (key failure) | Compliance stream arrives 6 hours late | Catches with stale data | Plan still delivered, quality loss is measured |
 | **Model server down** (key failure) | The vLLM container crashes mid-day, so both the agent and the resolver are unavailable | Fallback rate, precision@K | The scorer does not depend on the LLM, so the system falls back to scorer top-K and keeps working |
