@@ -295,7 +295,7 @@ The RFC (Milestone 1, [Shifting_Hulls_RFC.pdf](Shifting_Hulls_RFC.pdf)) describe
 | RFC (1 Nov) | Now (16 Nov) | Why |
 |---|---|---|
 | Resolver on a 4–9B LLM, agent on a separate LLM of up to 27B | One shared ~14B LLM for both roles, with different prompts | Only one model fits on our local GPU at a time. A 14B model is also the size where published entity-matching results exist [1] |
-| Real-data noise and resolver check on US coastal AIS (NOAA) | Danish Maritime Authority AIS | Danish waters lie on the main export route out of the Baltic, so more shadow-tagged hulls pass through. The files are free and updated daily |
+| Real-data noise and resolver check on US coastal AIS (NOAA) | Danish Maritime Authority AIS | The Danish data is recent, so the MMSIs and names in it match today's sanctions list. The NOAA file used in the pilot was from January 2023, three years older than the list. Danish coverage is not clearly larger: the team counted 11 to 19 shadow-tagged hulls per day, 28 over two days (these counts have not been independently re-checked). One NOAA day (1 Jan 2023) gave 203 IMO matches, 26 of them shadow-tagged, and 25 of those 26 broadcast an MMSI different from the listed one (partly time drift). The Danish files are free and updated daily |
 | Drift: "measure whether re-scoring recovers it" | Concrete retraining protocol (Section 5) using only labels the system could observe | Retraining on the simulator's hidden truth would overstate recovery |
 
 ### Plan change log
