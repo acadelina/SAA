@@ -274,4 +274,43 @@ zero-signal control bounds the claim from below, and the sweep shows how the
 claim depends on a setting we chose. The result must be reported this way in
 the final document, not as a single headline number.
 
+---
+
+## 5. Calibration stance
+
+Calibrate the simulator to **measured marginal rates**, not to the ordering of
+the pilot baselines.
+
+Set or fit from data:
+
+- MMSI churn: 0.65 new MMSIs per vessel-year for shadow hulls, 0.18 for other
+  hulls (pilot measurement).
+- Two active MMSIs for the same hull in 15 to 20% of hulls (pilot
+  measurement).
+- Missing fields from one day of Danish AIS: draught 28%, navigational status
+  17%, cargo type 83%, IMO 42%.
+- AIS gap rates, gap lengths and position jump rates: measured on Danish AIS
+  in weeks 1 and 2.
+
+The pilot catch figures (random 1.0, churn rule 12.5, scorer 9.4 per 20
+inspections) are a **plausibility range only**. Three reasons:
+
+1. The pilot counted repeat catches on a fixed fleet. The main metric counts
+   unique hulls under replacement, so the numbers are not directly comparable
+   even on the same simulator.
+2. The pilot was small. The paired top-20 difference between the churn rule
+   and the scorer was -2.8, with a 95% interval of -7 to +1. The ordering is
+   not established.
+3. Tuning to an ordering turns a test into a fit: the simulator would be
+   built so that one baseline wins, which is the thing the experiment is meant
+   to test.
+
+Do not tune any parameter to reproduce 12.5, 9.4, or the claim that the churn
+rule beats the scorer. After calibration, check only that the figures are in
+the same broad range (single digits to low teens on the repeat-catch
+definition) and that neither baseline catches almost all or almost none of the
+shadow hulls. Record the calibration run and the measured marginals next to the
+config.
+
+
 

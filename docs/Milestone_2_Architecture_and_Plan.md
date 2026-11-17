@@ -225,12 +225,16 @@ The system has three AI components, each with a separate job and its own metric.
 
 **Baselines.** Four methods are compared on the same simulated fleets:
 
-| Method | Description | Pilot estimate (catches per 20 inspections) |
+| Method | Description | Pilot figure (repeat-catch count, plausibility only) |
 |---|---|---|
 | Random | Pick K hulls at random | 1.0 |
-| Churn rule | Rank by number of new MMSIs, best threshold | 12.5 |
+| Churn rule | Rank by number of new MMSIs, threshold chosen on development seeds | 12.5 |
 | Scorer alone | Gradient-boosted model, top-K | 9.4 |
 | **Agent** | Local LLM agent with tools | target: best baseline **+2 or more** |
+
+The pilot figures are a sanity band, not targets. They counted repeat catches on a fixed fleet, so they are not numerically comparable with the main unique-catch metric. The pilot was also small: the paired top-20 difference between the churn rule and the scorer was -2.8, with a 95% interval of -7 to +1, so the ordering of those two baselines is not established.
+
+**Calibration.** The simulator is calibrated to measured marginals: MMSI churn at 0.65 per vessel-year for shadow hulls and 0.18 for other hulls; 15 to 20% of hulls with two active MMSIs; missing-field rates from Danish AIS (draught 28%, navigational status 17%, cargo type 83%, IMO 42%); and AIS gap and position jump rates measured in weeks 1 and 2. The full stance is in [the simulator rules](specs/simulation_rules.md). No parameter is tuned to reproduce 12.5, 9.4 or the churn-above-scorer ordering. After calibration we check only that the figures are in the same broad range and that neither baseline catches almost all or almost no shadow hulls. (This replaces the earlier "calibrate until churn about 12.5, scorer about 9.4" wording; that wording is still present in Section 7 and should be removed by its owner.)
 
 **Signal strength (the main result is a curve).** The agent can only beat the scorer through two channels: free text and coupling between the AIS and compliance streams. The team controls how strong those channels are, so a win at one setting could be an artifact of the simulator. We therefore make strength explicit with two parameters, `text_signal` and `coupling_signal`, both in [0, 1]. The main experiment uses a single sweep variable s with `text_signal = coupling_signal = s` at four values: 0.00, 0.25, 0.50 and 1.00. At s = 0 neither channel carries label information. Definitions and the optional two-channel check are in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
 
