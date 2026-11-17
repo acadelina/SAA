@@ -21,11 +21,16 @@ htmlcov/
 data/
 *.csv
 *.zip
+*.log
+*.parquet
 
 # Global Fishing Watch raw cache
 gfw_cache/
 gfw_raw/
 *.gfw.json
+
+# Raw export dumps derived from external sources
+raw_exports/
 
 # Model files
 models/
