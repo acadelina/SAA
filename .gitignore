@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Local data and downloads
+data/
+*.csv
+*.zip
+
+# Global Fishing Watch raw cache
+gfw_cache/
+gfw_raw/
+*.gfw.json
+
+# Model files
+models/
+*.gguf
+*.safetensors
+*.ckpt
+*.pt
+*.onnx
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
