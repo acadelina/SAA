@@ -34,9 +34,9 @@ DAYS = 30
 def random_run(seed: int, cooldown: int) -> list[int]:
     """One run of a uniformly random picker over eligible hulls.
 
-    Caught shadow hulls are replaced the next day by a fresh shadow hull, so
-    the shadow count stays at SHADOW. Inspected clean hulls are blocked for
-    `cooldown` days.
+    A caught shadow hull leaves the fleet and a fresh shadow hull takes its
+    place with no cooldown, so the shadow count stays at SHADOW. Inspected
+    clean hulls are blocked for `cooldown` days.
     """
     rng = random.Random(seed)
     is_shadow = [False] * HULLS
@@ -50,13 +50,11 @@ def random_run(seed: int, cooldown: int) -> list[int]:
         caught = 0
         for hull in rng.sample(eligible, BUDGET):
             if is_shadow[hull]:
+                # The caught hull leaves and a fresh shadow hull takes its
+                # slot, so the slot stays shadow and is not blocked.
                 caught += 1
             else:
                 blocked_until[hull] = day + cooldown
-        # Replace each caught hull with a fresh shadow hull in a free slot.
-        for _ in range(caught):
-            free = [i for i in range(HULLS) if not is_shadow[i]]
-            is_shadow[rng.choice(free)] = True
         catches.append(caught)
     return catches
 

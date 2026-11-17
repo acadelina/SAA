@@ -43,8 +43,8 @@ These come from `scripts/analysis/check_simulator_design.py`, which is in the re
 
 | Claim | Value | Source | How it was measured | Caveat |
 |---|---|---|---|---|
-| Random picker, 30-day mean, 7-day clean cooldown | 1.54 catches per day | Our Monte Carlo, 200 seeded runs | Uniform pick over eligible hulls, removal plus warm-start replacement | Simulator assumption, not data |
-| Random picker, 30-day mean, 30-day clean cooldown | 1.96 catches per day | Same script | Same, cooldown set to 30 | This is why the 30-day cooldown was dropped |
+| Random picker, 30-day mean, 7-day clean cooldown | 1.12 catches per day | Our Monte Carlo, 200 seeded runs | Uniform pick over eligible hulls, removal plus warm-start replacement | Simulator assumption, not data |
+| Random picker, 30-day mean, 30-day clean cooldown | 1.43 catches per day | Same script | Same, cooldown set to 30 | A 30-day cooldown pushes the eligible shadow share to about 10.8% by day 30, which is why it was dropped |
 | New MMSIs per shadow hull in 30 days at 0.65 per year | 0.053 per hull, 2.7 across the fleet | Arithmetic on the measured annual rate | 0.65 / 365 * 30, times 50 hulls | Within-run churn is too small to be a feature |
 | Change in that count from the x0.30 adaptation | 1.9 events across the fleet | Arithmetic | 0.70 * 2.67 | Why adaptation acts on visible history, not the future rate |
 | Pass rate of "lower 95% bound at or above +2", true gain +2 | 0.026 | Our simulation, 20,000 draws | Paired t with 10 seeds | The reason the success rule changed |

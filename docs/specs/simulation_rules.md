@@ -74,9 +74,10 @@ same clean hulls.
 
 The cooldown has a side effect that must be stated. Inspected clean hulls leave
 the eligible pool for a week, so the shadow share among eligible hulls rises
-from 5% on day 1 to about 8% on day 30, and a uniformly random picker averages
-about 1.5 catches per day over the run, not the 1.0 it gets on day 1. A 30-day
-cooldown would make this much larger, close to 2.0 per day, and is not used.
+from 5% on day 1 to about 5.6% on day 30, and a uniformly random picker averages
+about 1.1 catches per day over the run, against 0.95 on day 1. A 30-day
+cooldown would make this much larger (share about 10.8% on day 30, random
+baseline about 1.4 per day) and is not used.
 The random baseline is therefore measured on the simulator and reported with
 the results. The daily counts of eligible hulls and eligible shadow hulls are
 logged, and `scripts/analysis/check_simulator_design.py` reproduces all of
@@ -411,9 +412,9 @@ inspections) are a **plausibility range only**. Three reasons:
    fleet. The main metric averages 30 days in which caught hulls are removed
    and replacements enter warm-started, so the shadow pool itself stays
    constant. What changes is the eligible mix: the clean cooldown lifts the
-   shadow share among eligible hulls from 5% toward 8% by day 30, which makes
-   later days slightly easier. Expect the 30-day averages to differ from the
-   pilot for both reasons, and read the measured random baseline (about 1.5
+   shadow share among eligible hulls only slightly, from 5% to about 5.6% by
+   day 30, which makes later days marginally easier. Expect the 30-day averages to differ from the
+   pilot for both reasons, and read the measured random baseline (about 1.1
    per day, Section 1.3) as the floor, not 1.0.
 2. The pilot was small. The paired top-20 difference between the churn rule
    and the scorer was -2.8, with a 95% interval of -7 to +1. The ordering is
