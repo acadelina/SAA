@@ -32,6 +32,9 @@ gfw_raw/
 # Raw export dumps derived from external sources
 raw_exports/
 
+# Local working directory for the backtest: cohort cache and raw API responses
+work/
+
 # Model files
 models/
 *.gguf
