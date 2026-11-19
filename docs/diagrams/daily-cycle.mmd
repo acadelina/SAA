@@ -9,7 +9,7 @@ sequenceDiagram
     S-)I: AIS messages and compliance events (all day, continuously)
     P->>A: start day d (budget K)
     A->>T: get_shortlist()
-    T-->>A: ranked hulls with risk scores
+    T-->>A: ranked hulls, scores<br/>and eligibility today
     loop for each unclear hull
         A->>T: resolve_identity / get_timeline / get_events
         T-->>A: same hull? (confidence) + history

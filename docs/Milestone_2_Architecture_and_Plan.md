@@ -30,29 +30,31 @@ An AI agent makes that choice, explains each pick, and sends the list back to th
 
 **Decision supported:** the daily inspection plan, meaning which K of N vessels to inspect and why.
 
-**Evidence that the problem is worth solving.** A pilot analysis on real data compared 149 hulls tagged *shadow fleet* with 149 hulls that were only *detained* in port. Shadow hulls took new MMSIs 3.6 times faster (0.65 against 0.18 per vessel-year). This single count separates the two groups with an AUC of 0.84. It is a useful signal, but not a detector on its own.
+**Evidence that the problem is worth solving.** A pilot analysis on real data compared 149 hulls tagged *shadow fleet* with 149 hulls that were only *detained* in port. Identities came from Global Fishing Watch and labels from OpenSanctions. Shadow hulls took new MMSIs 3.6 times faster (0.65 against 0.18 per vessel-year). This single count separates the two groups with an AUC of 0.84. The signal is weaker within one ship type: the AUC falls to 0.77 within tankers, because the shadow group is 97% tankers, the control group only 15%, and there are only 23 tanker controls. There is also a timing problem. Churn is measured today, after designation, so it may be a consequence of listing, or listing may follow churn. The count is a useful signal, but not a detector on its own. A time split backtest ([docs/backtest/](backtest/time_split_results.md)) puts a number on that. Using only identity history dated before a 31 May 2024 cutoff, the churn count scores an AUC of 0.62 within tankers (95 percent interval 0.55 to 0.69) and the rate version 0.56 (0.48 to 0.63), against 0.59 for history length alone, which is no behavioural signal at all. Computed over full history the same features give 0.84 overall and 0.78 within tankers, reproducing the pilot. The 0.84 is therefore read as retrospective: it is what the rule scores when it can see the period after listing, not what it would have scored in time to act.
 
-**Hypothesis.** A small, locally served AI agent that can query the system's data will catch **at least 2 more shadow hulls per 20 inspections** than the better of two simpler methods: a rule based on identity changes ("churn rule") and a trained risk scorer used on its own. The hypothesis is tested over 10 paired random seeds, and the lower end of the 95% interval must be at or above +2. The project also measures how quickly each method gets worse once the fleet changes tactics.
+**Hypothesis.** A small, locally served AI agent that can query the system's data will catch **more shadow hulls per 20 inspections than a trained risk scorer used on its own**, its intended target size being 2 more. The primary test is one-sided superiority over the scorer on 10 paired random seeds at full signal strength: the lower end of the one-sided 95% interval must be above zero. The smallest effect worth claiming was fixed in advance at +1 per 20, and +2 is reported as the target with its interval. A rule based on identity changes ("churn rule") is reported as a second, descriptive comparator. The simulator also runs with the signals the agent could exploit turned down to zero, where the agent should not win. See [the simulator rules](specs/simulation_rules.md) for the success rule and its power. The project also measures how quickly each method gets worse once the fleet changes tactics.
 
 ---
 
 ## 2. Data sources
 
-The project uses **real data** to understand the problem and calibrate the simulator, and **simulated data** to run and evaluate the system. Simulation is needed because real data has almost no ground truth. In one day of Danish AIS (16 million messages from about 3,300 vessels), only 11 to 19 hulls could be linked to a shadow-fleet tag, and two days together give 28. That is enough to spot-check one model, but far too few to evaluate the whole system. Real data also cannot show how a fleet reacts to the system's inspections.
+The project uses **real data** to understand the problem and calibrate the simulator, and **simulated data** to run and evaluate the system. Simulation is needed because real data has almost no ground truth. In one day of Danish AIS (16 million messages from about 3,300 vessels), only 11 to 19 hulls could be linked to a shadow-fleet tag, and two days together give 28 (team counts, not independently re-checked). That is enough to spot-check one model, but far too few to evaluate the whole system. Real data also cannot show how a fleet reacts to the system's inspections.
 
 ### 2.1 Real data (offline, for calibration and validation)
 
 | Source | What it contains | Access and updates | Use in the project |
 |---|---|---|---|
 | **Danish Maritime Authority AIS** (Danish waters and straits, the main export route out of the Baltic) | One row per AIS message: timestamp, MMSI, IMO, name, call sign, ship type, position, speed, course, heading, navigational status, draught, cargo type, destination | Free, no account. One file per day (ZIP/CSV, about 600–700 MB), published within days. Latest checked: 10 Nov 2026 | Measure realistic noise (missing fields, transmission gaps, impossible position jumps). Find real shadow-fleet hulls by IMO to test the resolver |
-| **OpenSanctions** (maritime dataset) | 21,054 vessels with IMO, MMSI, name, flag, aliases and source lists. Tags include *shadow fleet* (896 vessels), *sanctioned* and *detained* (from the Tokyo, Black Sea and Abuja MoU port-state-control lists) | Free for non-commercial use (CC BY-NC 4.0), no account. One CSV of 5 MB, updated almost daily. Latest checked: 15 Nov 2026 | Labels: hulls tagged *shadow fleet*, and a comparison group of hulls that were only *detained*. Basis for the compliance event stream |
+| **OpenSanctions** (maritime dataset) | 21,054 vessels with IMO, MMSI, name, flag, aliases and source lists. Tags include *shadow fleet* (896 vessels), *sanctioned* and *detained* (from the Tokyo, Black Sea and Abuja MoU port-state-control lists). These counts were reported by the team (snapshot 15 Nov 2026) and have not been re-checked | Free for non-commercial use (CC BY-NC 4.0), no account. One CSV of 5 MB, updated almost daily. Latest checked: 15 Nov 2026 | Labels: hulls tagged *shadow fleet*, and a comparison group of hulls that were only *detained*. Basis for the compliance event stream |
 | **Global Fishing Watch Vessels API (v3)** | Identity history per vessel: MMSI, name, flag and call sign over time, with dates, combined from AIS and 40+ public registries | Free for non-commercial use (CC BY-NC 4.0). Needs a free account and API token. Covers 2012 to the present | Identity timelines: how often hulls change MMSI, name and flag. It is the only free source found that has the date of each change |
 
-**Measurements so far.** The pilot, based on Global Fishing Watch and OpenSanctions, gives the identity numbers. Shadow hulls take new MMSIs at 0.65 per vessel-year compared with 0.18 for other hulls, and 15–20% of hulls show two MMSIs active at the same time. A first look at one day of Danish AIS (10 Nov 2026) gives 16.1 million messages from 3,292 vessels. Draught is missing in 28% of records, navigational status in 17%, cargo type in 83% and IMO in 42%. Gaps and position jumps will be measured the same way in weeks 1–2, and the simulator settings updated.
+**Licences and data handling.** Global Fishing Watch and OpenSanctions data are licensed for non-commercial use only (CC BY-NC 4.0), and attribution is required in any output that uses them. This repository is public, so raw Global Fishing Watch data must not be committed to it. The pilot used local copies. Any derived table kept in the repository must contain no raw records. Check the Danish Maritime Authority terms before redistributing Danish AIS files.
+
+**Measurements so far.** The pilot, based on Global Fishing Watch and OpenSanctions, gives the identity numbers. Shadow hulls take new MMSIs at 0.65 per vessel-year compared with 0.18 for other hulls. Concurrency depends on which table is read. In the Global Fishing Watch registry table, about 2 to 3 of the 149 hulls show two MMSIs overlapping over 30 days. In the self-reported table, the one the churn features come from, 30 of the 149 shadow hulls and 23 of the 149 control hulls show two MMSIs at the same time. A first look at one day of Danish AIS (10 Nov 2026) gives 16.1 million messages from 3,292 vessels. Draught is missing in 28% of records, navigational status in 17%, cargo type in 83% and IMO in 42%. The Danish counts, including the shadow-tagged hull counts in Section 2, are team counts and have not been independently re-checked. Gaps and position jumps will be measured the same way in weeks 1 to 2, and the simulator settings updated.
 
 ### 2.2 Simulated data (online, what the system actually runs on)
 
-A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 1000, of which 5% are shadow) and emits two streams with different speeds.
+A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 1000, of which 5% are shadow) and emits three streams: a fast noisy AIS stream, a slow delayed compliance stream, and the daily inspection results that close the feedback loop.
 
 **Stream A: AIS-like messages** (fast, noisy)
 
@@ -80,16 +82,17 @@ A seeded simulator, configured in YAML, creates a fleet of N hulls (default N = 
 
 - **Frequency:** a few events per simulated day, with configurable delay and reordering.
 
-**Stream C: inspection results** (feedback loop). After each day the simulator reports what each inspection found (shadow or not). Inspected shadow hulls may adapt, for example by changing identity less often and switching off AIS more often. This is how drift is created.
+**Stream C: inspection results** (feedback loop). After each day the simulator reports what each inspection found (shadow or not). A shadow outcome is a **catch**: that hull leaves the active fleet and a new shadow hull enters the next day, so the active shadow count stays at 5% of N. A clean hull stays in the fleet and cannot be inspected again for 7 days. Uncaught shadow hulls may adapt after a catch, shortening their visible identity history and switching off AIS more often. This is how drift is created. The full rules for catches, cooldown, replacement and adaptation are in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
 
 | Field | Example | Notes |
 |---|---|---|
 | `day`, `plan_id` | 12, `p-0012` | Which daily plan the inspection belongs to |
 | `imo`, `mmsi` | 9319703, 273456780 | Identity of the inspected hull at inspection time |
-| `outcome` | `shadow` / `clean` | The only ground truth the system ever sees during operation |
+| `outcome` | `shadow` / `clean` | The only ground truth the system ever sees during operation. A `shadow` outcome removes the hull and schedules a replacement |
 | `reported_at` | end of day *d* | Available to the system from day *d*+1 |
 
 - **Frequency:** K messages per simulated day (one per inspected hull).
+- **Counting:** a caught hull leaves the fleet, so every catch is a different hull. "Catches per 20 inspections" counts catches, never repeat inspections of the same hull. A plan with a duplicate hull, a hull already caught, or a hull on cooldown is invalid. The shortlist tells the agent which hulls are eligible, so this should be rare. When it happens, the plan falls back to the scorer's top-K, and both the with-fallback result (intent to treat) and the valid-plans-only result are reported, together with the fallback rate. A fallback rate above 10% is treated as an agent failure, not a baseline win.
 - **Labels and fairness of evaluation:** the system only learns labels for hulls it chose to inspect. The full ground truth (which hulls are shadow) stays inside the simulator and is used only by the evaluation scripts, never by the running system.
 
 ### 2.3 How new data enters the system
@@ -145,7 +148,7 @@ Data streams in all day. The decision is made once, at the end of day *d*, using
 
 | Tool | Type | Returns |
 |---|---|---|
-| `get_shortlist(m)` | read | Top-*m* hulls by risk score (default *m* = 60), with scores and the main features behind each |
+| `get_shortlist(m)` | read | Top-*m* hulls by risk score (default *m* = 60, *m* may be up to N), with scores, whether each hull is eligible today, and the main features behind each |
 | `get_timeline(hull)` | read | All MMSIs, names, flags and AIS gaps linked to a hull, with dates |
 | `get_events(hull)` | read | Compliance events linked to a hull, with their publish times |
 | `resolve_identity(records)` | read | Resolver verdict: same hull or not, with a confidence |
@@ -178,8 +181,8 @@ The system has three AI components, each with a separate job and its own metric.
 **Why each one fits its role**
 
 - **Resolver (LLM).** Linking records means comparing names that are misspelled, transliterated or slightly changed (e.g. "SUN" vs "SUN-1"). Language models handle this better than exact string rules. Published work shows a 14B model reaching 98.2% F1 on sanctions entity matching, against 91.3% for rules [1]. The project tests whether a model of similar size can do the same job when it also sees track summaries.
-- **Risk scorer (gradient boosting).** Most of the signal is in numbers: how many new MMSIs, flag changes, long gaps and listing events a hull has. Gradient boosting is strong on this kind of table data, trains in seconds, and is easy to explain. In the pilot it reached an AUC of 0.88. Port-arrival and loitering features are **not** used, because in the pilot they mostly reflected how the comparison group was chosen.
-- **Decision agent (LLM).** In a pilot simulation (N = 1000, K = 20), random inspection caught 1.0 shadow hulls per day, the churn rule 12.5 and the scorer 9.4, so about 8 of 20 slots were still wasted. The agent can only do better by using information the scorer does not have: free text (names, registry notes) and links between the two streams (for example, a hull that goes quiet right after a listing). An LLM can combine these, call tools when it is unsure, and explain each choice in plain language for the inspector. Running it locally keeps data in-house.
+- **Risk scorer (gradient boosting).** Most of the signal is in numbers: how many new MMSIs, flag changes, long gaps and listing events a hull has. Gradient boosting is strong on this kind of table data, trains in seconds, and is easy to explain. In the pilot it reached an AUC of 0.88, but that model used all eight features, including port arrivals and loitering. The plan drops those two features, so the AUC of the scorer the project will actually use is not yet known, and will be measured. Port arrivals and loitering are dropped because in the pilot they mostly reflected how the comparison group was chosen.
+- **Decision agent (LLM).** In a pilot simulation (N = 1000, K = 20, 5% prevalence), random inspection caught 1.0 shadow hulls per day, the churn rule 12.5 and the scorer 9.4. Under an equal-variance binormal approximation, the churn rule's 12.5 implies an AUC near 0.89, above the 0.84 measured for the one-feature ranker used in the separate AUC test. We have not closed this discrepancy: either the approximation is off, or the pilot churn rule and the 0.84 ranker are not the same ranker. It is recorded as unresolved in the evidence log, and the calibration run will show which one the simulator reproduces. This leaves about 7.5 of the 20 slots wasted for the rule, and about 10.6 for the scorer. The ordering between the rule and the scorer is not established. The paired difference was 2.8 catches in favour of the rule, with a 95% interval from -1 to +7 that includes zero, and it came from resampling only 149 control hulls. The agent can only do better by using information the scorer does not have: free text (names, registry notes) and links between the two streams (for example, a hull that goes quiet right after a listing). An LLM can combine these, call tools when it is unsure, and explain each choice in plain language for the inspector. Running it locally keeps data in-house.
 
 **Why one shared model.** Because of the hardware limits of the local machine, only one LLM can run at a time. Using one local LLM for both roles also means one server to run and monitor, and vLLM handles requests from both roles together.
 
@@ -206,7 +209,7 @@ The system has three AI components, each with a separate job and its own metric.
 
 **Retraining policy.**
 
-- The **initial scorer** is trained on development seeds only, using the simulator's ground truth as labels. It is then frozen for all evaluation seeds.
+- The **initial scorer** is trained on development seeds only, and is frozen for all evaluation seeds. Its labels are the outcomes of the inspections the methods actually made on those seeds, which is what a real system would have. A scorer trained on the hidden ground truth, including hulls nobody inspected, would be an oracle and is not used as the baseline. If we want it as an upper bound, it is reported separately and labelled as such.
 - **Re-scoring after drift** is tested as a separate condition. On day 15 of each run, the scorer is retrained using only labels the system could really have: its own inspection results plus listing events. The hidden ground truth is not used. A new model version is written to the model store and loaded for days 16–30. Comparing the frozen and retrained conditions shows whether re-scoring recovers the loss caused by drift.
 - The LLM is never retrained. Prompts are frozen before the main experiment, and the prompt version is recorded with every run.
 
@@ -220,36 +223,56 @@ The system has three AI components, each with a separate job and its own metric.
 - Per-component outputs: resolver decisions with confidence, and risk scores for all hulls.
 - Run metrics shown on the dashboard and stored for analysis.
 
+**What counts as a catch.** An inspection returns one outcome. A `shadow` outcome is a catch: the hull leaves the active fleet and a replacement enters the next day, so the active shadow count returns to 5%. A `clean` hull stays and goes on a 7-day cooldown. Therefore every catch is a distinct hull and "catches per 20 inspections" never counts the same hull twice. The full rule set is in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
+
 **Baselines.** Four methods are compared on the same simulated fleets:
 
-| Method | Description | Pilot estimate (catches per 20 inspections) |
+| Method | Description | Pilot figure (one-day snapshot, plausibility only) |
 |---|---|---|
 | Random | Pick K hulls at random | 1.0 |
-| Churn rule | Rank by number of new MMSIs, best threshold | 12.5 |
+| Churn rule | Rank by number of new MMSIs, threshold chosen on development seeds | 12.5 |
 | Scorer alone | Gradient-boosted model, top-K | 9.4 |
 | **Agent** | Local LLM agent with tools | target: best baseline **+2 or more** |
 
+The pilot figures are a sanity band, not targets. They come from one top-20 list on a freshly drawn fleet. The main metric averages 30 days in which caught hulls are removed and warm-started replacements enter, so the shadow pool stays constant, but the 7-day clean cooldown lifts the shadow share among eligible hulls only slightly, from 5% to about 5.6% over the run, which makes later days marginally easier. The measured random baseline is therefore about 1.1 per day rather than 1.0. The two settings are not numerically comparable. The pilot was also small: the paired top-20 difference between the churn rule and the scorer was -2.8, with a 95% interval of -7 to +1, so the ordering of those two baselines is not established.
+
+**Calibration.** The simulator is calibrated to measured marginals: MMSI churn at 0.65 per vessel-year for shadow hulls and 0.18 for other hulls; 15 to 20% of hulls with two active MMSIs; missing-field rates from Danish AIS (draught 28%, navigational status 17%, cargo type 83%, IMO 42%); and AIS gap and position jump rates measured in weeks 1 and 2. The full stance is in [the simulator rules](specs/simulation_rules.md). No parameter is tuned to reproduce 12.5, 9.4 or the churn-above-scorer ordering. After calibration we check only that the figures are in the same broad range and that neither baseline catches almost all or almost no shadow hulls.
+
+**Signal strength (the main result is a curve).** The agent can only beat the scorer through two channels: free text and coupling between the AIS and compliance streams. The team controls how strong those channels are, so a win at one setting could be an artifact of the simulator. We therefore make strength explicit with two parameters, `text_signal` and `coupling_signal`, both in [0, 1]. The main experiment uses a single sweep variable s with `text_signal = coupling_signal = s` at four values: 0.00, 0.25, 0.50 and 1.00. At s = 0 neither channel carries label information. Definitions and the optional two-channel check are in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
+
+The headline result is G(s), the mean paired difference between the agent's primary metric and the scorer's at the same strength, with a 95% interval. The scorer is the pre-specified comparator: it is the deployable method and already contains the churn features. The churn rule is reported as a second, descriptive comparator. Choosing the higher of the two baselines on development seeds is deliberately not done, because with 5 seeds that choice is close to a coin flip and biases the comparator upward. We report the whole curve and never a single pooled number. At s = 0 the agent must not beat the scorer; if its interval lies entirely above zero, we audit for a simulator leak, an evaluation bug, tuning on evaluation seeds, or a better rule over the same features, and report which one it was before claiming anything. The control is weak at small leaks: 10 seeds catch a 1-catch leak 80% of the time and a half-catch leak only 30% of the time. This limitation goes in the final report in plain words: a gain at high strength shows that the agent can use these signals when they exist, not that it would gain in the real world.
+
 **Evaluation data.**
-- **Main:** 10 simulator seeds per method, 30 simulated days each, N = 1000 hulls, 5% shadow, K = 20. Each seed is run with every method (paired comparison). These seeds are never used for development.
+- **Main:** 10 evaluation seeds (2001 to 2010), 30 simulated days each, N = 1000 hulls, 5% shadow, K = 20. Every method and every signal strength is run on every seed, with the same initial fleet and the same exogenous random draws within a seed (paired comparison). Development uses seeds 1001 to 1005 for prompts, thresholds, scorer training and debugging; those seeds never appear in the evaluation. Both seed lists are fixed and recorded before the main experiment. Full protocol in [docs/specs/simulation_rules.md](specs/simulation_rules.md).
 - **Resolver check on real data:** shadow-tagged hulls linked by IMO in Danish AIS. Ships pass through rather than stay, so each new day adds new hulls. Two days (5 and 10 Nov 2026) already give 28, and about a week of data will be used.
 
 **Metrics**
 
 | Level | Metric |
 |---|---|
-| End-to-end (main) | Shadow hulls caught per 20 inspections, averaged over 30 days, with paired differences and 95% intervals |
-| End-to-end (secondary) | Wasted inspections on legitimate hulls (K minus catches), and the share of the agent's picks that are not in the scorer's top-K (does the agent add anything?) |
+| End-to-end (main) | Shadow hulls caught per 20 inspections, averaged over 30 days, with paired differences and 95% intervals (formula below) |
+| End-to-end (secondary) | Precision, wasted inspections on legitimate hulls (K minus catches), share of the agent's picks that are not in the scorer's top-K, new-hull yield, and median time from replacement entry to catch |
 | Resolver | F1, calibration (does a 0.8 confidence mean right 80% of the time?) |
 | Scorer | AUC, precision@K |
 | System | Agent latency per day, queue lag, fallback rate, share of plans delivered on time |
 
-**Success criterion.** The agent catches at least 2 more shadow hulls per 20 inspections than the better baseline, with the lower end of the 95% interval at or above +2. If not, the hypothesis is rejected, and the result is reported as it is.
+**Primary metric formula.** For one run (one seed, one method, one signal strength):
+
+```
+P = (20 / K) * (1 / D) * sum(c_d for d in 1..D)
+```
+
+where `c_d` is the number of shadow hulls caught on day `d` and `D` = 30. Because a caught hull leaves the fleet, `c_d` counts unique hulls by construction. With K = 20, P is the mean number of catches per day.
+
+**Paired analysis.** For each evaluation seed, compute the difference between the agent and the scorer on the same seed and signal strength: `d_i = P_agent,i - P_scorer,i`. The interval is a paired t-interval on the 10 differences, `d_bar +/- t(0.975, 9) * sd(d) / sqrt(10)`, with 9 degrees of freedom and t = 2.262. Also report a percentile bootstrap interval from 10,000 resamples as a diagnostic. At n = 10 it covers about 90% of the time rather than 95%, so it is reported but does not veto the t-interval. The interval covers seed-to-seed variation only, not simulator or model version uncertainty. Report the 10 seed-level values.
+
+**Success criterion.** At the strongest signal (s = 1.00), the agent must beat the scorer with the lower end of the one-sided 95% interval above zero. That is the pass condition. Two further statements are reported with it. First, the pre-registered smallest effect of interest is +1 catch per 20 inspections: if the interval also excludes +1, the gain is called large enough to matter. Second, the target size of +2 catches per 20 inspections is reported as a point estimate with its interval, not as the pass condition. The earlier draft required the lower end to be at or above +2, which a true +2 gain passes only about 3% of the time; [the simulator rules](specs/simulation_rules.md) give the power table. At s = 0.00, the control condition, the agent must not beat the scorer; a significant gain there triggers the audit described in Section 6, not automatic failure. Results at the intermediate strengths are reported with intervals and interpreted as a trend across the sweep. If the s = 1.00 criterion is not met, the hypothesis is rejected and the result is reported as it is. We do not select a favourable strength after seeing the results.
 
 **Scenarios and failure cases**
 
 | Scenario | What happens | What is measured | Expected behaviour |
 |---|---|---|---|
-| **Drift** | Caught shadow hulls change identity less and switch off AIS more | Drop in catches over time, and recovery after re-scoring | Each method degrades. The speed of the drop is measured |
+| **Drift** | After a catch, uncaught shadow hulls adapt with a 2-day delay: their visible prior identity history is shortened and AIS-off gaps become twice as likely (parameters in [the simulator rules](specs/simulation_rules.md)) | Catch rate over time, post-replacement catch time, and recovery after re-scoring | Each method degrades. The speed of the drop is measured |
 | **Load** | 10× burst of AIS messages | Queue lag, whether the plan still lands within the simulated day | No data lost, plan on time |
 | **Late data** (key failure) | Compliance stream arrives 6 hours late | Catches with stale data | Plan still delivered, quality loss is measured |
 | **Model server down** (key failure) | The vLLM container crashes mid-day, so both the agent and the resolver are unavailable | Fallback rate, precision@K | The scorer does not depend on the LLM, so the system falls back to scorer top-K and keeps working |
@@ -264,12 +287,12 @@ The system is built and evaluated by the final project-progress milestone on **3
 | Week | Dates | Components | Experiments and checks | Done when |
 |---|---|---|---|---|
 | 1 | 16–22 Nov | Repo, Docker Compose (Redis, PostgreSQL), message schemas. Local LLM running on vLLM. **Submit Milestone 2** | Start measuring noise on Danish AIS | Base services start and the LLM answers |
-| 2 | 23–29 Nov | Simulator v1 (fleet and AIS stream). Ingestion consumer with quarantine | Calibrate the simulator on Danish AIS. Test 2–3 candidate LLMs on sample tool calls | Simulated AIS reaches the database. LLM chosen |
-| 3 | 30 Nov–6 Dec | Compliance stream and inspection feedback. Feature service and replay ETL. Risk scorer and model store | Random and churn-rule baselines | First full simulated day with a rule-based plan |
-| 4 | 7–13 Dec | Hull adaptation and scenario settings. Prefect daily cycle, plan validator with fallback. MCP tools and resolver | Baselines on 10 seeds. Resolver vs. track-matching baseline on simulated data | Daily cycle runs end to end without the agent |
-| 5 | 14–20 Dec | Decision agent. FastAPI and dashboard | First agent runs on development seeds. Resolver check on real hulls from Danish AIS | First 30-day run with the agent |
-| 6 | 21–27 Dec | Bug fixes only | **Main experiment:** agent on 10 seeds × 30 days. Drift and load scenarios | Main results table ready |
-| 7 | 28–31 Dec | Bug fixes only | Late data, model server down and prompt injection scenarios. Analysis: paired intervals and success criterion | **Final project-progress milestone, 31 Dec** |
+| 2 | 23–29 Nov | Simulator v1 (fleet and AIS stream). Ingestion consumer with quarantine. **Thin vertical slice:** one simulated day from an AIS message to a logged plan, with crude stand-ins for features, scorer and feedback | Calibrate the simulator on Danish AIS. Test 2–3 candidate LLMs on sample tool calls | Simulated AIS reaches the database. One simulated day produces a plan row end to end, even if crude. LLM chosen |
+| 3 | 30 Nov–6 Dec | Compliance stream and inspection feedback. Feature service and replay ETL. Risk scorer and model store | Random and churn-rule baselines. Check that neither baseline catches almost all or almost none of the shadow hulls (pilot figures are a rough range only) | First full simulated day with a rule-based plan on the real feature service and scorer. Baselines in a sensible range |
+| 4 | 7–13 Dec | Hull adaptation and scenario settings. Prefect daily cycle, plan validator with fallback. MCP tools and resolver. **Stub agent:** returns the scorer's top-K through `submit_inspection_plan`, on the same validator path as the real agent | Baselines on 10 seeds. Resolver vs. track-matching baseline on simulated data | Daily cycle runs end to end with the stub agent on 10 seeds: ingestion, features, plan, validation, feedback, and the next day's features updated |
+| 5 | 14–20 Dec | Real decision agent replaces the stub. FastAPI and dashboard | First agent runs on development seeds. Resolver check on real hulls from Danish AIS. First 30-day run with the agent | Real agent produces plans on development seeds and the first 30-day run completes. Prompts frozen by 18 Dec |
+| 6 | 21–27 Dec | Bug fixes only | **Main experiment:** agent on 10 seeds × 30 days. Drift and load scenarios. Late data, model server down and prompt injection scenarios, launched as overnight runs | All runs finished and raw results stored by 24 Dec (25–27 Dec are holidays) |
+| 7 | 28–31 Dec | Bug fixes only. **Buffer: 29 and 30 Dec, two working days kept free** | Analysis on 28 Dec: paired intervals and success criterion. 31 Dec: final checks and submission | **Final project-progress milestone, 31 Dec.** Results and analysis frozen on 28 Dec |
 | – | January 2027 | No new features | Slides, demo and rehearsal | **Final presentation** |
 
 **Risks to the timeline and what we will do**
@@ -278,9 +301,13 @@ The system is built and evaluated by the final project-progress milestone on **3
 |---|---|---|
 | The local GPU cannot serve a 14B model fast enough (one full run = 10 seeds × 30 days × 1 agent session) | Main experiment does not fit in week 6 | Measure latency in week 2. If one day takes more than about 2 minutes, switch to the 8B fallback. Seeds can run overnight |
 | The agent's tool calls are unreliable (wrong arguments, loops) | Many fallbacks, so the agent is barely tested | Cap tool calls per day. Test tool calling in week 2 before choosing the model. Report the fallback rate as a result in itself |
-| The simulator is too easy or too hard (the churn rule catches almost all or almost no shadow hulls) | Nothing to learn from the comparison | Calibrate against the pilot numbers (churn rule ≈ 12.5, scorer ≈ 9.4 out of 20) in week 3 before running any agent |
+| The simulator is too easy or too hard (the churn rule catches almost all or almost no shadow hulls) | Nothing to learn from the comparison | Calibrate the simulator to measured marginals in week 3 and check the baselines are neither near-perfect nor near-zero before running any agent. Never tune to a target ordering |
 | Danish AIS gives too few shadow hulls for the resolver check | Weak real-data validation | Download more days. The check is a sanity test, and the main result does not depend on it |
-| Holidays in weeks 6–7 | Less working time | Weeks 6–7 hold only experiments and bug fixes. All components must be finished by week 5 |
+| Holidays in weeks 6–7 | Less working time | Weeks 6–7 hold only experiments and bug fixes. All components must be finished by week 5. All scenario runs move to week 6, which leaves 29 and 30 Dec as a two-day buffer for overruns |
+| The simulator rules are ambiguous (what counts as a catch, re-inspection, adaptation parameters) | Different implementations give different results, and work is redone late | Another engineer is writing the rules in `docs/specs/simulation_rules.md`. That file is the single source. It is frozen before the week 3 calibration. Ambiguities are logged as issues against it, and every rule used in evaluation gets a test |
+| The simulator gives the agent an advantage by construction | The agent appears to beat the baselines for artificial reasons | Run a signal-strength sweep and a zero-signal negative control, both defined in `docs/specs/simulation_rules.md`. At zero signal the agent must not beat the baselines. Report both checks with the main result |
+| Data licences limit what can be published (Global Fishing Watch and OpenSanctions are CC BY-NC 4.0) | Raw or derived data cannot go in a public repo without breaking the licence | No raw Global Fishing Watch data in the repo. Commit download scripts, not data, and keep tokens in environment variables. Check each derived artefact against the licence before publishing. Attribute both sources in the README |
+| A single point of failure in a three-person team (illness, exams, one owner unavailable) | That component blocks the pipeline and the experiment runs | Three areas, each with an owner and a cover: (A) simulator and data, (B) ingestion, storage and orchestration, (C) AI models, evaluation and dashboard. The owner and cover for each area are recorded in the issue tracker (owner: TBD until agreed). A cover reviews the owner's PRs and can run the component. No component merges without two people able to run it |
 
 **How changes to this plan are recorded.** This timeline is our commitment. If it changes, we update this document in a separate commit and add a row to the change log below with the date, what changed and why. The weekly "Done when" column is what we check ourselves against at the end of each week.
 
@@ -293,7 +320,7 @@ The RFC (Milestone 1, [Shifting_Hulls_RFC.pdf](Shifting_Hulls_RFC.pdf)) describe
 | RFC (1 Nov) | Now (16 Nov) | Why |
 |---|---|---|
 | Resolver on a 4–9B LLM, agent on a separate LLM of up to 27B | One shared ~14B LLM for both roles, with different prompts | Only one model fits on our local GPU at a time. A 14B model is also the size where published entity-matching results exist [1] |
-| Real-data noise and resolver check on US coastal AIS (NOAA) | Danish Maritime Authority AIS | Danish waters lie on the main export route out of the Baltic, so more shadow-tagged hulls pass through. The files are free and updated daily |
+| Real-data noise and resolver check on US coastal AIS (NOAA) | Danish Maritime Authority AIS | The Danish data is recent, so the MMSIs and names in it match today's sanctions list. The NOAA file used in the pilot was from January 2023, three years older than the list. Danish coverage is not clearly larger: the team counted 11 to 19 shadow-tagged hulls per day, 28 over two days (these counts have not been independently re-checked). One NOAA day (1 Jan 2023) gave 203 IMO matches, 26 of them shadow-tagged, and 25 of those 26 broadcast an MMSI different from the listed one (partly time drift). The Danish files are free and updated daily |
 | Drift: "measure whether re-scoring recovers it" | Concrete retraining protocol (Section 5) using only labels the system could observe | Retraining on the simulator's hidden truth would overstate recovery |
 
 ### Plan change log
@@ -301,6 +328,9 @@ The RFC (Milestone 1, [Shifting_Hulls_RFC.pdf](Shifting_Hulls_RFC.pdf)) describe
 | Date | Change | Reason |
 |---|---|---|
 | 16 Nov 2026 | Initial plan (this document) | Milestone 2 |
+| 17 Nov 2026 | Review fixes: catch and re-inspection rules, adaptation parameters, signal-strength sweep, corrected pilot evidence, stub agent and buffer in the timeline | Remove ambiguity, correct overstated claims and reduce schedule risk |
+| 17 Nov 2026 | Statistical review: one-sided success rule with a pre-registered smallest effect, scorer as the single comparator, 7-day clean cooldown, adaptation acts on visible history, selective-label scorer as the baseline | A true +2 gain passed the old rule about 3% of the time, the 30-day cooldown shifted the eligible mix much more than a short one (random baseline 1.4 against 1.1 per day), and the stated churn rate cannot move a within-run churn count |
+| 17 Nov 2026 | Time split backtest of the churn signal added under `docs/backtest/`. The pilot AUC is recorded as a retrospective figure. Section 1 now carries the prospective number next to it | Churn measured today includes churn that follows a listing, so the pilot figure cannot carry a claim about what the ranking would do at the time. A fixed cutoff separates the two |
 
 ---
 

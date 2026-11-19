@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Local data and downloads
+data/
+*.csv
+*.zip
+*.log
+*.parquet
+
+# Global Fishing Watch raw cache
+gfw_cache/
+gfw_raw/
+*.gfw.json
+
+# Raw export dumps derived from external sources
+raw_exports/
+
+# Local working directory for the backtest: cohort cache and raw API responses
+work/
+
+# Model files
+models/
+*.gguf
+*.safetensors
+*.ckpt
+*.pt
+*.onnx
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
